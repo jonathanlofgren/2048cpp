@@ -20,41 +20,40 @@ Col4 Col3 Col2 Col1
  Bitboard = Row4 Row3 Row2 Row1
 
 */
-
 typedef uint64_t Bitboard;
 typedef std::vector<int> Vector;
 
 enum Row {
-	ROW_1, ROW_2, ROW_3, ROW_4, 
+    ROW_1, ROW_2, ROW_3, ROW_4, 
 
-	ROW_N = 4
+    ROW_N = 4
 };
 
 enum Col {
-	COL_1, COL_2, COL_3, COL_4, 
+    COL_1, COL_2, COL_3, COL_4, 
 
-	COL_N = 4
+    COL_N = 4
 };
 
 enum Move {
-	LEFT, UP, DOWN, RIGHT, 
-	MOVE_N = 4,
+    LEFT, UP, DOWN, RIGHT, 
+    MOVE_N = 4,
 
-	NULL_MOVE
+    NULL_MOVE
 };
 
 enum Square {
-	SQ_11, SQ_12, SQ_13, SQ_14,
-	SQ_21, SQ_22, SQ_23, SQ_24,
-	SQ_31, SQ_32, SQ_33, SQ_34,
-	SQ_41, SQ_42, SQ_43, SQ_44,
+    SQ_11, SQ_12, SQ_13, SQ_14,
+    SQ_21, SQ_22, SQ_23, SQ_24,
+    SQ_31, SQ_32, SQ_33, SQ_34,
+    SQ_41, SQ_42, SQ_43, SQ_44,
 
-	SQUARE_N = 16
+    SQUARE_N = 16
 };
 
 struct PossibleMove {
-	Move move;
-	Bitboard board;
+    Move move;
+    Bitboard board;
 };
 
 const int UNIQUE_ROWS = 65536;
@@ -63,9 +62,9 @@ const int SHIFTED_COLS = UNIQUE_ROWS*COL_N;
 
 
 /*
-	Define some needed operators on our types
+    Define some needed operators on our types
 */
-#define ENABLE_OPERATORS_ON(T) 									\
+#define ENABLE_OPERATORS_ON(T)                                  \
 inline T operator+(T d1, T d2) { return T(int(d1) + int(d2)); } \
 inline T operator-(T d1, T d2) { return T(int(d1) - int(d2)); } \
 inline T& operator++(T& d) { return d = T(int(d) + 1); }        \
