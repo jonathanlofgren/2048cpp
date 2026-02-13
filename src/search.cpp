@@ -22,7 +22,7 @@ const double DiagLinGrad[SQUARE_N] = {
 
 double RowValue[SHIFTED_ROWS];
 
-const int MAX_DEPTH = 4;
+const int MAX_DEPTH = 5;
 const double PROBABILITY_CUTOFF = 0.001;
 
 void Search::init() {
@@ -93,6 +93,11 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
     double prob_sum = (double)expanded[31]/2.0;
     double prob2 = 0.9/prob_sum;
     double prob4 = 0.1/prob_sum;
+
+    // Early out: if the most probable child is already below cutoff,
+    // all children will be leaves — skip the expansion entirely.
+    if (prob * prob2 < PROBABILITY_CUTOFF)
+        return evaluate(board);
 
     Bitboard *curr = expanded;
     while (*curr) {
