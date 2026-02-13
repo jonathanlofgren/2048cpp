@@ -25,7 +25,7 @@ This is a 2048 AI solver using bitboard representation and parallelized expectim
 
 - **types.h** — Core types: `Bitboard` (uint64_t), `Move`, `Square`, `Row`, `Col` enums
 - **bitboard.h/cpp** — Board representation, O(1) move lookup tables (pre-computed at init), random tile placement
-- **search.h/cpp** — Expectimax search (depth 4, probability cutoff 0.001), OpenMP parallelization
+- **search.h/cpp** — Expectimax search (depth 4, probability cutoff 0.001), parallel via `std::async`
 - **main.cpp** — Game loop entry point
 - **tests/test_main.cpp** — Test suite (6 tests, run individually by name via CTest)
 

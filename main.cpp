@@ -1,9 +1,10 @@
 #include <iostream>
 
+#include <chrono>
+
 #include "types.h"
 #include "bitboard.h"
 #include "search.h"
-#include <omp.h>
 
 void play() {
     Bitboard board = place_random(place_random(0x0ULL));
@@ -16,9 +17,10 @@ void play() {
     while (possible.size() > 0) {
         moves++;
 
-        double start = omp_get_wtime();
+        auto start = std::chrono::high_resolution_clock::now();
         Search::Result result = Search::expectimax_parallel(board);
-        time_par += (omp_get_wtime() - start);
+        auto end = std::chrono::high_resolution_clock::now();
+        time_par += std::chrono::duration<double>(end - start).count();
 
         // Make move and place a new square
         board = make_move(board, result.move);

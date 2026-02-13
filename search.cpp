@@ -1,6 +1,7 @@
 #include "search.h"
 
 #include <algorithm>
+#include <future>
 #include <limits>
 #include <map>
 #include <vector>
@@ -154,10 +155,14 @@ Result Search::expectimax_parallel(Bitboard board) {
         return {NULL_MOVE, 0};
     }
 
-    double values[MOVE_N];
-    #pragma omp parallel for num_threads(n)
+    std::vector<std::future<double>> futures(n);
     for (int i = 0; i < n; i++) {
-        values[possible[i].move] = _value_expected_node(possible[i].board, 0, 1);
+        futures[i] = std::async(std::launch::async, _value_expected_node, possible[i].board, 0, 1);
+    }
+
+    double values[MOVE_N];
+    for (int i = 0; i < n; i++) {
+        values[possible[i].move] = futures[i].get();
     }
 
     Move best_move = NULL_MOVE;
