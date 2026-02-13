@@ -18,17 +18,17 @@ endif()
 
 # Core library (shared between game and tests)
 add_library(2048core STATIC
-    bitboard.cpp
-    search.cpp
+    src/bitboard.cpp
+    src/search.cpp
 )
-target_include_directories(2048core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(2048core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Link pthreads for std::async/std::thread
 find_package(Threads REQUIRED)
 target_link_libraries(2048core PUBLIC Threads::Threads)
 
 # Main game executable
-add_executable(2048cpp main.cpp)
+add_executable(2048cpp src/main.cpp)
 target_link_libraries(2048cpp PRIVATE 2048core)
 
 # Tests

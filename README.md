@@ -72,10 +72,11 @@ ctest --test-dir build --output-on-failure
 ```
 ├── CMakeLists.txt              # Build configuration
 ├── .github/workflows/ci.yml   # CI pipeline
-├── types.h                     # Core types (Bitboard, Move, Square enums)
-├── bitboard.h / bitboard.cpp   # Board representation and move operations
-├── search.h / search.cpp       # Expectimax search algorithm
-├── main.cpp                    # Game entry point
+├── src/
+│   ├── types.h                 # Core types (Bitboard, Move, Square enums)
+│   ├── bitboard.h / bitboard.cpp   # Board representation and move operations
+│   ├── search.h / search.cpp       # Expectimax search algorithm
+│   └── main.cpp                    # Game entry point
 └── tests/
     └── test_main.cpp           # Test suite
 ```
