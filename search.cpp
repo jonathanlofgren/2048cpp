@@ -1,9 +1,7 @@
 #include "search.h"
 
-#include <algorithm>
 #include <future>
 #include <limits>
-#include <map>
 #include <vector>
 
 #include "types.h"
@@ -20,8 +18,6 @@ double RowValue[SHIFTED_ROWS];
 
 const int MAX_DEPTH = 4;
 const double PROBABILITY_CUTOFF = 0.001;
-
-using namespace Search;
 
 void Search::init() {
 
@@ -50,24 +46,6 @@ double gradient_value_map(Bitboard board) {
 
     return value;
 }
-
-std::vector<Expansion> Search::expand_board(Bitboard b) {
-    std::vector<Expansion> expanded;
-    expanded.reserve(32); // Doing this reserve halves the running time!
-
-    for (Square s = SQ_11; s <= SQ_44; ++s) {
-        if (!(b & SquareMask[s])) { 
-            Expansion exp2(b | (0x1ULL << SquareOffset[s]), 0.9);   // Set a 2 in the empty square (probability 0.9)
-            Expansion exp4(b | (0x2ULL << SquareOffset[s]), 0.1);   // Set a 4 in the empty square (probability 0.1)
-
-            expanded.push_back(exp2);
-            expanded.push_back(exp4);
-        }
-    }
-
-    return expanded;
-}
-
 
 void expand_inplace(Bitboard b, Bitboard *expanded) {
     int i = 0;
@@ -127,27 +105,7 @@ double Search::_value_max_node(Bitboard board, int depth, double prob) {
     return max;
 }
 
-Result Search::expectimax(Bitboard board) {
-    auto possible = possible_moves(board);
-
-    if (possible.size() == 0) {
-        return {NULL_MOVE, 0};
-    }
-
-    std::map<Move, double> move_values;
-
-    for (const PossibleMove & pm: possible) {
-        move_values[pm.move] = _value_expected_node(pm.board, 0, 1);
-    }
-
-    auto max = std::max_element(move_values.begin(), move_values.end(),
-            [](const std::pair<Move, double>& p1, const std::pair<Move, double>& p2) {
-                return p1.second < p2.second; });
-
-    return {max->first, max->second};
-}
-
-Result Search::expectimax_parallel(Bitboard board) {
+Search::Result Search::expectimax_parallel(Bitboard board) {
     auto possible = possible_moves(board);
     int n = possible.size();
 
@@ -176,54 +134,4 @@ Result Search::expectimax_parallel(Bitboard board) {
     }
 
     return {best_move, max_value};
-}
-
-
-Result Search::expected_value(State & st) {
-    // First base case: we reached depth
-    if (st.depth == MAX_DEPTH) {
-        return {NULL_MOVE, evaluate(st.board)};
-    }
-
-    // Second base case: we are below probability cutoff
-    if (st.prob < PROBABILITY_CUTOFF) {
-        return {NULL_MOVE, evaluate(st.board)};
-    }
-
-    auto possible = possible_moves(st.board);
-
-    // Third base case: there are no possible moves
-    if (possible.size() ==  0) {
-        return {NULL_MOVE, 0};
-    }
-
-
-    std::map<Move, double> move_values;
-    double value = 0;
-    double prob_sum = 0;
-    double prob = 0;
-
-    for (const PossibleMove pm: possible) { // For each possible move we want to find the expected value
-        value = 0;
-
-        // Expand the board fully to all possible states
-        std::vector<Expansion> expanded = expand_board(pm.board);
-        prob_sum = (double)expanded.size() / 2.0;
-
-        for (const Expansion exp: expanded) {
-            prob = exp.prob/prob_sum;
-            State next_state(exp.board, st.depth+1, st.prob*prob);
-
-            Result r = expected_value(next_state);
-            value += prob*r.value;
-        }
-
-        move_values[pm.move] = value;
-    }
-
-    auto max = std::max_element(move_values.begin(), move_values.end(),
-            [](const std::pair<Move, double>& p1, const std::pair<Move, double>& p2) {
-                return p1.second < p2.second; });
-
-    return {max->first, max->second};
 }
