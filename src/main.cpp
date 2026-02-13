@@ -1,14 +1,26 @@
 #include <iostream>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
+#include <map>
+#include <numeric>
+#include <vector>
 
 #include "types.h"
 #include "bitboard.h"
 #include "search.h"
 
-void play(bool verbose) {
+struct GameResult {
+    int moves;
+    int max_tile;
+    int score;
+    double total_time;
+    uint64_t nodes;
+};
+
+GameResult play_game(bool verbose) {
     Bitboard board = place_random(place_random(0x0ULL));
 
     auto possible = possible_moves(board);
@@ -48,30 +60,134 @@ void play(bool verbose) {
 
     uint64_t nodes = Search::get_nodes();
 
-    std::cout << Bitboards::pretty(board) << std::endl;
+    return {moves, max_value(board), board_score(board), total_time, nodes};
+}
+
+void print_single_result(const GameResult &r) {
     std::cout << "Game Over." << std::endl;
-    std::cout << "Total moves:  " << moves << std::endl;
-    std::cout << "Max tile:     " << max_value(board) << std::endl;
-    std::cout << "Final score:  " << board_score(board) << std::endl;
+    std::cout << "Total moves:  " << r.moves << std::endl;
+    std::cout << "Max tile:     " << r.max_tile << std::endl;
+    std::cout << "Final score:  " << r.score << std::endl;
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Total time:   " << total_time << " s" << std::endl;
-    std::cout << "Avg ms/move:  " << 1000 * total_time / moves << std::endl;
-    std::cout << "Min ms/move:  " << min_time << std::endl;
-    std::cout << "Max ms/move:  " << max_time << std::endl;
-    std::cout << "Nodes:        " << nodes << std::endl;
-    std::cout << "Nodes/sec:    " << static_cast<uint64_t>(nodes / total_time) << std::endl;
+    std::cout << "Total time:   " << r.total_time << " s" << std::endl;
+    std::cout << "Avg ms/move:  " << 1000 * r.total_time / r.moves << std::endl;
+    std::cout << "Nodes:        " << r.nodes << std::endl;
+    std::cout << "Nodes/sec:    " << static_cast<uint64_t>(r.nodes / r.total_time) << std::endl;
+}
+
+void print_batch_summary(const std::vector<GameResult> &results) {
+    int n = results.size();
+
+    // Score statistics
+    std::vector<double> scores(n);
+    for (int i = 0; i < n; i++) scores[i] = results[i].score;
+    std::sort(scores.begin(), scores.end());
+
+    double sum = std::accumulate(scores.begin(), scores.end(), 0.0);
+    double mean = sum / n;
+
+    double median;
+    if (n % 2 == 0)
+        median = (scores[n/2 - 1] + scores[n/2]) / 2.0;
+    else
+        median = scores[n/2];
+
+    double sq_sum = 0;
+    for (double s : scores) sq_sum += (s - mean) * (s - mean);
+    double stddev = std::sqrt(sq_sum / n);
+
+    // Max tile distribution
+    std::map<int, int> tile_dist;
+    for (const auto &r : results) tile_dist[r.max_tile]++;
+
+    // Move and time totals
+    double total_moves = 0, total_time = 0;
+    uint64_t total_nodes = 0;
+    for (const auto &r : results) {
+        total_moves += r.moves;
+        total_time += r.total_time;
+        total_nodes += r.nodes;
+    }
+
+    std::cout << "=== Summary ===" << std::endl;
+    std::cout << std::fixed << std::setprecision(1);
+    std::cout << "Games:         " << n << std::endl;
+    std::cout << "Avg score:     " << mean << std::endl;
+    std::cout << "Median score:  " << static_cast<int>(median) << std::endl;
+    std::cout << "Std dev:       " << stddev << std::endl;
+    std::cout << "Min score:     " << static_cast<int>(scores.front()) << std::endl;
+    std::cout << "Max score:     " << static_cast<int>(scores.back()) << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Max tile distribution:" << std::endl;
+    for (const auto &p : tile_dist) {
+        double pct = 100.0 * p.second / n;
+        std::cout << "  " << std::setw(5) << p.first << ": "
+                  << std::setw(3) << p.second << " ("
+                  << std::setw(5) << std::fixed << std::setprecision(1) << pct << "%)"
+                  << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << std::fixed << std::setprecision(1);
+    std::cout << "Avg moves:     " << total_moves / n << std::endl;
+    std::cout << std::setprecision(2);
+    std::cout << "Total time:    " << total_time << " s" << std::endl;
+    std::cout << "Total nodes:   " << total_nodes << std::endl;
 }
 
 
 int main(int argc, char *argv[]) {
     bool verbose = false;
+    int num_games = 1;
+    unsigned base_seed = 0;
+    bool has_seed = false;
+
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
             verbose = true;
+        } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+            base_seed = static_cast<unsigned>(std::stoul(argv[++i]));
+            has_seed = true;
+        } else if (std::strcmp(argv[i], "--games") == 0 && i + 1 < argc) {
+            num_games = std::stoi(argv[++i]);
         }
     }
 
     Bitboards::init();
     Search::init();
-    play(verbose);
+
+    if (num_games == 1) {
+        if (has_seed) Bitboards::seed(base_seed);
+        GameResult r = play_game(verbose);
+        print_single_result(r);
+    } else {
+        if (!has_seed) {
+            base_seed = static_cast<unsigned>(
+                std::chrono::system_clock::now().time_since_epoch().count());
+        }
+
+        std::cout << "=== Benchmark: " << num_games << " games, base seed "
+                  << base_seed << " ===" << std::endl << std::endl;
+
+        std::cout << "seed\tmoves\tmax_tile\tscore\ttime_s\tnodes" << std::endl;
+
+        std::vector<GameResult> results;
+        results.reserve(num_games);
+
+        for (int i = 0; i < num_games; i++) {
+            unsigned seed = base_seed + i;
+            Bitboards::seed(seed);
+            GameResult r = play_game(false);
+            results.push_back(r);
+
+            std::cout << seed << "\t" << r.moves << "\t" << r.max_tile
+                      << "\t" << r.score << "\t" << std::fixed
+                      << std::setprecision(2) << r.total_time << "\t"
+                      << r.nodes << std::endl;
+        }
+
+        std::cout << std::endl;
+        print_batch_summary(results);
+    }
 }
