@@ -1,10 +1,8 @@
 #include "bitboard.h"
 
-#include <sstream> 
+#include <sstream>
 #include <iomanip>
 #include <algorithm>
-
-#include <iostream>
 
 Bitboard SquareMask[SQUARE_N];
 Bitboard ColMask[COL_N];
