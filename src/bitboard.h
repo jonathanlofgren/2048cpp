@@ -66,7 +66,8 @@ std::vector<PossibleMove> possible_moves(Bitboard b);
 Bitboard row_to_col(Bitboard b, Col c);
 
 inline int bits_to_value(Bitboard s) {
-    return 2 << (s - 1);    // if s=0 then s-1=UINT_MAX so this returns 0
+    if (s == 0) return 0;
+    return 2 << (s - 1);
 }
 
 inline Bitboard value_to_bits(int value) {
