@@ -169,6 +169,61 @@ bool test_place_random() {
     return true;
 }
 
+bool test_board_score() {
+    // Empty board should have score 0
+    if (board_score(0x0ULL) != 0) {
+        std::cerr << "Empty board should have score 0, got " << board_score(0x0ULL) << std::endl;
+        return false;
+    }
+
+    // Board with a single 2-tile (bits=1) at SQ_11
+    Bitboard one_two = 0x1ULL;
+    if (board_score(one_two) != 2) {
+        std::cerr << "Single 2-tile board should have score 2, got " << board_score(one_two) << std::endl;
+        return false;
+    }
+
+    // Board with 2-tiles in every square (bits=1 in each nibble)
+    Bitboard all_twos = 0x1111111111111111ULL;
+    if (board_score(all_twos) != 32) {
+        std::cerr << "All-twos board should have score 32, got " << board_score(all_twos) << std::endl;
+        return false;
+    }
+
+    // Board with a single 1024-tile (bits=10) at SQ_11 and a 4-tile (bits=2) at SQ_12
+    Bitboard mixed = 0x2AULL;
+    if (board_score(mixed) != 1028) {
+        std::cerr << "Mixed board should have score 1028, got " << board_score(mixed) << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool test_node_counter() {
+    Search::reset_nodes();
+    if (Search::get_nodes() != 0) {
+        std::cerr << "Node counter should be 0 after reset, got " << Search::get_nodes() << std::endl;
+        return false;
+    }
+
+    // Run evaluate once — should increment
+    Search::evaluate(0x0ULL);
+    if (Search::get_nodes() == 0) {
+        std::cerr << "Node counter should be > 0 after evaluate()" << std::endl;
+        return false;
+    }
+
+    // Reset and verify back to 0
+    Search::reset_nodes();
+    if (Search::get_nodes() != 0) {
+        std::cerr << "Node counter should be 0 after second reset" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool test_evaluation() {
     // Evaluation of empty board should be 0 (all tiles are 0)
     double val = Search::evaluate(0x0ULL);
@@ -211,6 +266,8 @@ int main(int argc, char *argv[]) {
         {"empty_squares", test_empty_squares},
         {"place_random", test_place_random},
         {"evaluation", test_evaluation},
+        {"board_score", test_board_score},
+        {"node_counter", test_node_counter},
     };
 
     // If a test name is given, run only that test

@@ -61,6 +61,7 @@ Bitboard place_random(Bitboard b);
 
 int empty_squares(Bitboard b);
 int max_value(Bitboard b);
+int board_score(Bitboard b);
 
 std::vector<PossibleMove> possible_moves(Bitboard b);
 Bitboard row_to_col(Bitboard b, Col c);

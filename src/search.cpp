@@ -1,11 +1,17 @@
 #include "search.h"
 
+#include <atomic>
 #include <future>
 #include <limits>
 #include <vector>
 
 #include "types.h"
 #include "bitboard.h"
+
+namespace {
+    thread_local uint64_t tl_node_counter{0};
+    std::atomic<uint64_t> global_node_counter{0};
+}
 
 const double DiagLinGrad[SQUARE_N] = {
     1.00, 0.83, 0.66, 0.50,
@@ -60,11 +66,26 @@ void expand_inplace(Bitboard b, Bitboard *expanded) {
 }
 
 double Search::evaluate(Bitboard b) {
+    ++tl_node_counter;
     return gradient_value_map(b);
 }
 
+uint64_t Search::get_nodes() {
+    return global_node_counter.load(std::memory_order_relaxed) + tl_node_counter;
+}
 
-double Search::_value_expected_node(Bitboard board, int depth, double prob) {   
+void Search::reset_nodes() {
+    global_node_counter.store(0, std::memory_order_relaxed);
+    tl_node_counter = 0;
+}
+
+
+static void flush_tl_nodes() {
+    global_node_counter.fetch_add(tl_node_counter, std::memory_order_relaxed);
+    tl_node_counter = 0;
+}
+
+double Search::_value_expected_node(Bitboard board, int depth, double prob) {
     Bitboard expanded[32];
     expand_inplace(board, expanded);
 
@@ -80,6 +101,10 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
         expected_value += prob2*_value_max_node(b2, depth+1, prob*prob2) +
                           prob4*_value_max_node(b4, depth+1, prob*prob4);
     }
+
+    // Flush thread-local counter when a top-level async task finishes
+    if (depth == 0)
+        flush_tl_nodes();
 
     return expected_value;
 }

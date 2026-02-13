@@ -227,9 +227,17 @@ int max_value(Bitboard b) {
     for (Square s = SQ_11; s <= SQ_44; ++s) {
         value = bits_to_value(get_bits(b, s));
         max = std::max(max, value);
-    }   
+    }
 
     return max;
+}
+
+
+int board_score(Bitboard b) {
+    int score = 0;
+    for (Square s = SQ_11; s <= SQ_44; ++s)
+        score += bits_to_value(get_bits(b, s));
+    return score;
 }
 
 
