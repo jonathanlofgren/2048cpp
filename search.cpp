@@ -1,11 +1,12 @@
 #include "search.h"
 
-#include <vector>
 #include <algorithm>
+#include <limits>
+#include <map>
+#include <vector>
+
 #include "types.h"
 #include "bitboard.h"
-#include <utility>
-#include <limits>
 
 const double DiagLinGrad[SQUARE_N] = {
     1.00, 0.83, 0.66, 0.50,
@@ -14,20 +15,10 @@ const double DiagLinGrad[SQUARE_N] = {
     0.53, 0.35, 0.18, 0.00
 };
 
-const double StepGrad[SQUARE_N] = {
-    15, 14 ,13 , 12,
-     8,  9, 10,  11,
-     7,  6,  5,   4,
-     0,  1,  2,   3
- };
-
 double RowValue[SHIFTED_ROWS];
 
 const int MAX_DEPTH = 4;
 const double PROBABILITY_CUTOFF = 0.001;
-
-int evaluation_count = 0;
-int probability_cutoffs = 0;
 
 using namespace Search;
 
@@ -89,17 +80,6 @@ void expand_inplace(Bitboard b, Bitboard *expanded) {
     expanded[31] = i;   // indicate how many were empty
 }
 
-double gradient_value(Bitboard b) {
-    double sum = 0;
-
-    for (Square s = SQ_11; s <= SQ_44; ++s) {
-        sum += DiagLinGrad[s]*DiagLinGrad[s]*bits_to_value(get_bits(b, s));
-    }
-
-    return sum;
-}
-
-
 double Search::evaluate(Bitboard b) {
     return gradient_value_map(b);
 }
@@ -116,8 +96,10 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
 
     Bitboard *curr = expanded;
     while (*curr) {
-        expected_value += prob2*_value_max_node(*(curr++), depth+1, prob*prob2) + 
-                          prob4*_value_max_node(*(curr++), depth+1, prob*prob4);
+        Bitboard b2 = *(curr++);
+        Bitboard b4 = *(curr++);
+        expected_value += prob2*_value_max_node(b2, depth+1, prob*prob2) +
+                          prob4*_value_max_node(b4, depth+1, prob*prob4);
     }
 
     return expected_value;
@@ -198,9 +180,8 @@ Result Search::expected_value(State & st) {
         return {NULL_MOVE, evaluate(st.board)};
     }
 
-    // Second base case: we are below probablity cutoff
+    // Second base case: we are below probability cutoff
     if (st.prob < PROBABILITY_CUTOFF) {
-        ++probability_cutoffs;
         return {NULL_MOVE, evaluate(st.board)};
     }
 
