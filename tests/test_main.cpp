@@ -250,6 +250,59 @@ bool test_evaluation() {
     return true;
 }
 
+bool test_monotonicity() {
+    // Board A: monotonically ordered column {1,2,3,4} in COL_1 (increasing from ROW_1 to ROW_4)
+    // SQ_11=exp1, SQ_21=exp2, SQ_31=exp3, SQ_41=exp4
+    Bitboard board_a = (0x1ULL << SquareOffset[SQ_11])
+                     | (0x2ULL << SquareOffset[SQ_21])
+                     | (0x3ULL << SquareOffset[SQ_31])
+                     | (0x4ULL << SquareOffset[SQ_41]);
+
+    // Board B: disordered column {1,3,2,4} in COL_1
+    Bitboard board_b = (0x1ULL << SquareOffset[SQ_11])
+                     | (0x3ULL << SquareOffset[SQ_21])
+                     | (0x2ULL << SquareOffset[SQ_31])
+                     | (0x4ULL << SquareOffset[SQ_41]);
+
+    double val_a = Search::evaluate(board_a);
+    double val_b = Search::evaluate(board_b);
+
+    if (val_a <= val_b) {
+        std::cerr << "Monotonic board (" << val_a
+                  << ") should score higher than disordered board ("
+                  << val_b << ")" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool test_smoothness() {
+    // Board A: smooth column {3,4,5,6} in COL_1
+    Bitboard board_a = (0x3ULL << SquareOffset[SQ_11])
+                     | (0x4ULL << SquareOffset[SQ_21])
+                     | (0x5ULL << SquareOffset[SQ_31])
+                     | (0x6ULL << SquareOffset[SQ_41]);
+
+    // Board B: rough column {3,6,4,5} in COL_1
+    Bitboard board_b = (0x3ULL << SquareOffset[SQ_11])
+                     | (0x6ULL << SquareOffset[SQ_21])
+                     | (0x4ULL << SquareOffset[SQ_31])
+                     | (0x5ULL << SquareOffset[SQ_41]);
+
+    double val_a = Search::evaluate(board_a);
+    double val_b = Search::evaluate(board_b);
+
+    if (val_a <= val_b) {
+        std::cerr << "Smooth board (" << val_a
+                  << ") should score higher than rough board ("
+                  << val_b << ")" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 struct TestCase {
     std::string name;
     bool (*func)();
@@ -268,6 +321,8 @@ int main(int argc, char *argv[]) {
         {"evaluation", test_evaluation},
         {"board_score", test_board_score},
         {"node_counter", test_node_counter},
+        {"monotonicity", test_monotonicity},
+        {"smoothness", test_smoothness},
     };
 
     // If a test name is given, run only that test

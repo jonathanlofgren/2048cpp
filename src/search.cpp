@@ -1,6 +1,8 @@
 #include "search.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <future>
 #include <limits>
 #include <vector>
@@ -21,9 +23,13 @@ const double DiagLinGrad[SQUARE_N] = {
 };
 
 double RowValue[SHIFTED_ROWS];
+double MonoScore[UNIQUE_ROWS];
+double SmoothScore[UNIQUE_ROWS];
 
 const int MAX_DEPTH = 5;
 const double PROBABILITY_CUTOFF = 0.001;
+const double MONO_WEIGHT   = 50.0;
+const double SMOOTH_WEIGHT = 10.0;
 
 void Search::init() {
 
@@ -41,16 +47,49 @@ void Search::init() {
 
             RowValue[UNIQUE_ROWS * r + b] = value;
         }
+
+        // Extract nibble exponents
+        int exp[4];
+        exp[0] = (b >>  0) & 0xF;
+        exp[1] = (b >>  4) & 0xF;
+        exp[2] = (b >>  8) & 0xF;
+        exp[3] = (b >> 12) & 0xF;
+
+        // Monotonicity: penalty for non-monotonic lines
+        int left_pen = 0, right_pen = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (exp[i + 1] > exp[i]) left_pen  += exp[i + 1] - exp[i];
+            if (exp[i] > exp[i + 1]) right_pen += exp[i] - exp[i + 1];
+        }
+        MonoScore[b] = -std::min(left_pen, right_pen);
+
+        // Smoothness: penalty for large gaps between adjacent non-zero tiles
+        int smooth = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (exp[i] != 0 && exp[i + 1] != 0) {
+                smooth -= std::abs(exp[i] - exp[i + 1]);
+            }
+        }
+        SmoothScore[b] = smooth;
     }
 }
 
-double gradient_value_map(Bitboard board) {
-    double value = 0;
+double evaluate_board(Bitboard board) {
+    double gradient = 0, mono = 0, smooth = 0;
+
     for (Row r = ROW_1; r <= ROW_4; ++r) {
-        value += RowValue[UNIQUE_ROWS * r + get_bits(board, r)];
+        Bitboard row_bits = get_bits(board, r);
+        gradient += RowValue[UNIQUE_ROWS * r + row_bits];
+        mono     += MonoScore[row_bits];
+        smooth   += SmoothScore[row_bits];
+    }
+    for (Col c = COL_1; c <= COL_4; ++c) {
+        Bitboard col_bits = get_bits(board, c);
+        mono   += MonoScore[col_bits];
+        smooth += SmoothScore[col_bits];
     }
 
-    return value;
+    return gradient + MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth;
 }
 
 void expand_inplace(Bitboard b, Bitboard *expanded) {
@@ -67,7 +106,7 @@ void expand_inplace(Bitboard b, Bitboard *expanded) {
 
 double Search::evaluate(Bitboard b) {
     ++tl_node_counter;
-    return gradient_value_map(b);
+    return evaluate_board(b);
 }
 
 uint64_t Search::get_nodes() {
