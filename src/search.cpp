@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <future>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 #include "types.h"
@@ -34,8 +35,31 @@ double SmoothScore[UNIQUE_ROWS];  // smoothness penalty
 double EmptyScore[UNIQUE_ROWS];   // empty tile count per row
 double MergeScore[UNIQUE_ROWS];   // adjacent equal tile count
 
-const int MAX_DEPTH = 5;
 const double PROBABILITY_CUTOFF = 0.001;
+
+// Adaptive depth: more distinct tiles = more complex board = deeper search.
+int current_max_depth;
+
+// Transposition table: keyed on board state, stores value per depth level.
+// Thread-local to avoid contention between parallel async tasks.
+// Cleared at the start of each top-level move evaluation.
+static constexpr int TT_DEPTHS = 8;
+thread_local std::unordered_map<Bitboard, double> tt[TT_DEPTHS];
+
+void tt_clear() {
+    for (int i = 0; i < TT_DEPTHS; ++i)
+        tt[i].clear();
+}
+
+int count_distinct_tiles(Bitboard board) {
+    uint16_t seen = 0;
+    while (board) {
+        seen |= (1 << (board & 0xF));
+        board >>= 4;
+    }
+    seen &= ~1;  // exclude 0 (empty)
+    return __builtin_popcount(seen);
+}
 const double GRAD_WEIGHT   = 5.0;
 const double MONO_WEIGHT   = 1.0;
 const double SMOOTH_WEIGHT = 0.1;
@@ -154,6 +178,10 @@ static void flush_tl_nodes() {
 }
 
 double Search::_value_expected_node(Bitboard board, int depth, double prob) {
+    // Clear TT at the start of each top-level async task
+    if (depth == 0)
+        tt_clear();
+
     Bitboard expanded[32];
     expand_inplace(board, expanded);
 
@@ -184,12 +212,19 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
 
 
 double Search::_value_max_node(Bitboard board, int depth, double prob) {
-    if (depth >= MAX_DEPTH || prob < PROBABILITY_CUTOFF)
+    if (depth >= current_max_depth || prob < PROBABILITY_CUTOFF)
         return evaluate(board);
+
+    // Transposition table lookup
+    auto& table = tt[depth];
+    auto tt_it = table.find(board);
+    if (tt_it != table.end())
+        return tt_it->second;
 
     auto possible = possible_moves(board);
 
     if (possible.size() == 0) {
+        table[board] = 0.0;
         return 0.0;
     }
 
@@ -200,6 +235,7 @@ double Search::_value_max_node(Bitboard board, int depth, double prob) {
         if (val > max) max = val;
     }
 
+    table[board] = max;
     return max;
 }
 
@@ -210,6 +246,10 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
     if (n == 0) {
         return {NULL_MOVE, 0};
     }
+
+    // Adaptive depth: complex boards (more distinct tiles) get deeper search
+    int distinct = count_distinct_tiles(board);
+    current_max_depth = std::max(3, std::min(7, distinct - 2));
 
     std::vector<std::future<double>> futures(n);
     for (int i = 0; i < n; i++) {
