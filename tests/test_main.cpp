@@ -169,6 +169,61 @@ bool test_place_random() {
     return true;
 }
 
+bool test_board_score() {
+    // Empty board should have score 0
+    if (board_score(0x0ULL) != 0) {
+        std::cerr << "Empty board should have score 0, got " << board_score(0x0ULL) << std::endl;
+        return false;
+    }
+
+    // Board with a single 2-tile (bits=1) at SQ_11
+    Bitboard one_two = 0x1ULL;
+    if (board_score(one_two) != 2) {
+        std::cerr << "Single 2-tile board should have score 2, got " << board_score(one_two) << std::endl;
+        return false;
+    }
+
+    // Board with 2-tiles in every square (bits=1 in each nibble)
+    Bitboard all_twos = 0x1111111111111111ULL;
+    if (board_score(all_twos) != 32) {
+        std::cerr << "All-twos board should have score 32, got " << board_score(all_twos) << std::endl;
+        return false;
+    }
+
+    // Board with a single 1024-tile (bits=10) at SQ_11 and a 4-tile (bits=2) at SQ_12
+    Bitboard mixed = 0x2AULL;
+    if (board_score(mixed) != 1028) {
+        std::cerr << "Mixed board should have score 1028, got " << board_score(mixed) << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool test_node_counter() {
+    Search::reset_nodes();
+    if (Search::get_nodes() != 0) {
+        std::cerr << "Node counter should be 0 after reset, got " << Search::get_nodes() << std::endl;
+        return false;
+    }
+
+    // Run evaluate once — should increment
+    Search::evaluate(0x0ULL);
+    if (Search::get_nodes() == 0) {
+        std::cerr << "Node counter should be > 0 after evaluate()" << std::endl;
+        return false;
+    }
+
+    // Reset and verify back to 0
+    Search::reset_nodes();
+    if (Search::get_nodes() != 0) {
+        std::cerr << "Node counter should be 0 after second reset" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool test_evaluation() {
     // Evaluation of empty board should be 0 (all tiles are 0)
     double val = Search::evaluate(0x0ULL);
@@ -195,6 +250,59 @@ bool test_evaluation() {
     return true;
 }
 
+bool test_monotonicity() {
+    // Board A: monotonically ordered column {1,2,3,4} in COL_1 (increasing from ROW_1 to ROW_4)
+    // SQ_11=exp1, SQ_21=exp2, SQ_31=exp3, SQ_41=exp4
+    Bitboard board_a = (0x1ULL << SquareOffset[SQ_11])
+                     | (0x2ULL << SquareOffset[SQ_21])
+                     | (0x3ULL << SquareOffset[SQ_31])
+                     | (0x4ULL << SquareOffset[SQ_41]);
+
+    // Board B: disordered column {1,3,2,4} in COL_1
+    Bitboard board_b = (0x1ULL << SquareOffset[SQ_11])
+                     | (0x3ULL << SquareOffset[SQ_21])
+                     | (0x2ULL << SquareOffset[SQ_31])
+                     | (0x4ULL << SquareOffset[SQ_41]);
+
+    double val_a = Search::evaluate(board_a);
+    double val_b = Search::evaluate(board_b);
+
+    if (val_a <= val_b) {
+        std::cerr << "Monotonic board (" << val_a
+                  << ") should score higher than disordered board ("
+                  << val_b << ")" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool test_smoothness() {
+    // Board A: smooth column {3,4,5,6} in COL_1
+    Bitboard board_a = (0x3ULL << SquareOffset[SQ_11])
+                     | (0x4ULL << SquareOffset[SQ_21])
+                     | (0x5ULL << SquareOffset[SQ_31])
+                     | (0x6ULL << SquareOffset[SQ_41]);
+
+    // Board B: rough column {3,6,4,5} in COL_1
+    Bitboard board_b = (0x3ULL << SquareOffset[SQ_11])
+                     | (0x6ULL << SquareOffset[SQ_21])
+                     | (0x4ULL << SquareOffset[SQ_31])
+                     | (0x5ULL << SquareOffset[SQ_41]);
+
+    double val_a = Search::evaluate(board_a);
+    double val_b = Search::evaluate(board_b);
+
+    if (val_a <= val_b) {
+        std::cerr << "Smooth board (" << val_a
+                  << ") should score higher than rough board ("
+                  << val_b << ")" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 struct TestCase {
     std::string name;
     bool (*func)();
@@ -211,6 +319,10 @@ int main(int argc, char *argv[]) {
         {"empty_squares", test_empty_squares},
         {"place_random", test_place_random},
         {"evaluation", test_evaluation},
+        {"board_score", test_board_score},
+        {"node_counter", test_node_counter},
+        {"monotonicity", test_monotonicity},
+        {"smoothness", test_smoothness},
     };
 
     // If a test name is given, run only that test

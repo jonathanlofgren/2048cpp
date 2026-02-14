@@ -1,11 +1,19 @@
 #include "search.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <future>
 #include <limits>
 #include <vector>
 
 #include "types.h"
 #include "bitboard.h"
+
+namespace {
+    thread_local uint64_t tl_node_counter{0};
+    std::atomic<uint64_t> global_node_counter{0};
+}
 
 const double DiagLinGrad[SQUARE_N] = {
     1.00, 0.83, 0.66, 0.50,
@@ -15,9 +23,13 @@ const double DiagLinGrad[SQUARE_N] = {
 };
 
 double RowValue[SHIFTED_ROWS];
+double MonoScore[UNIQUE_ROWS];
+double SmoothScore[UNIQUE_ROWS];
 
-const int MAX_DEPTH = 4;
+const int MAX_DEPTH = 5;
 const double PROBABILITY_CUTOFF = 0.001;
+const double MONO_WEIGHT   = 50.0;
+const double SMOOTH_WEIGHT = 10.0;
 
 void Search::init() {
 
@@ -35,16 +47,49 @@ void Search::init() {
 
             RowValue[UNIQUE_ROWS * r + b] = value;
         }
+
+        // Extract nibble exponents
+        int exp[4];
+        exp[0] = (b >>  0) & 0xF;
+        exp[1] = (b >>  4) & 0xF;
+        exp[2] = (b >>  8) & 0xF;
+        exp[3] = (b >> 12) & 0xF;
+
+        // Monotonicity: penalty for non-monotonic lines
+        int left_pen = 0, right_pen = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (exp[i + 1] > exp[i]) left_pen  += exp[i + 1] - exp[i];
+            if (exp[i] > exp[i + 1]) right_pen += exp[i] - exp[i + 1];
+        }
+        MonoScore[b] = -std::min(left_pen, right_pen);
+
+        // Smoothness: penalty for large gaps between adjacent non-zero tiles
+        int smooth = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (exp[i] != 0 && exp[i + 1] != 0) {
+                smooth -= std::abs(exp[i] - exp[i + 1]);
+            }
+        }
+        SmoothScore[b] = smooth;
     }
 }
 
-double gradient_value_map(Bitboard board) {
-    double value = 0;
+double evaluate_board(Bitboard board) {
+    double gradient = 0, mono = 0, smooth = 0;
+
     for (Row r = ROW_1; r <= ROW_4; ++r) {
-        value += RowValue[UNIQUE_ROWS * r + get_bits(board, r)];
+        Bitboard row_bits = get_bits(board, r);
+        gradient += RowValue[UNIQUE_ROWS * r + row_bits];
+        mono     += MonoScore[row_bits];
+        smooth   += SmoothScore[row_bits];
+    }
+    for (Col c = COL_1; c <= COL_4; ++c) {
+        Bitboard col_bits = get_bits(board, c);
+        mono   += MonoScore[col_bits];
+        smooth += SmoothScore[col_bits];
     }
 
-    return value;
+    return gradient + MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth;
 }
 
 void expand_inplace(Bitboard b, Bitboard *expanded) {
@@ -60,11 +105,26 @@ void expand_inplace(Bitboard b, Bitboard *expanded) {
 }
 
 double Search::evaluate(Bitboard b) {
-    return gradient_value_map(b);
+    ++tl_node_counter;
+    return evaluate_board(b);
+}
+
+uint64_t Search::get_nodes() {
+    return global_node_counter.load(std::memory_order_relaxed) + tl_node_counter;
+}
+
+void Search::reset_nodes() {
+    global_node_counter.store(0, std::memory_order_relaxed);
+    tl_node_counter = 0;
 }
 
 
-double Search::_value_expected_node(Bitboard board, int depth, double prob) {   
+static void flush_tl_nodes() {
+    global_node_counter.fetch_add(tl_node_counter, std::memory_order_relaxed);
+    tl_node_counter = 0;
+}
+
+double Search::_value_expected_node(Bitboard board, int depth, double prob) {
     Bitboard expanded[32];
     expand_inplace(board, expanded);
 
@@ -73,6 +133,11 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
     double prob2 = 0.9/prob_sum;
     double prob4 = 0.1/prob_sum;
 
+    // Early out: if the most probable child is already below cutoff,
+    // all children will be leaves — skip the expansion entirely.
+    if (prob * prob2 < PROBABILITY_CUTOFF)
+        return evaluate(board);
+
     Bitboard *curr = expanded;
     while (*curr) {
         Bitboard b2 = *(curr++);
@@ -80,6 +145,10 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
         expected_value += prob2*_value_max_node(b2, depth+1, prob*prob2) +
                           prob4*_value_max_node(b4, depth+1, prob*prob4);
     }
+
+    // Flush thread-local counter when a top-level async task finishes
+    if (depth == 0)
+        flush_tl_nodes();
 
     return expected_value;
 }

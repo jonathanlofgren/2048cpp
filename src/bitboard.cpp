@@ -31,15 +31,17 @@ Bitboard MoveDownMap[SHIFTED_COLS];
 
 std::map<int, Bitboard> ValueToBits;
 
-std::default_random_engine generator;
+std::mt19937 generator;
 std::uniform_int_distribution<Bitboard> random_board;
 std::uniform_int_distribution<Bitboard> random_row;
 
 
+void Bitboards::seed(unsigned s) {
+    generator = std::mt19937(s);
+}
+
 void Bitboards::init() {
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    
-    generator = std::default_random_engine(seed);
+    seed(std::chrono::system_clock::now().time_since_epoch().count());
     random_board = std::uniform_int_distribution<Bitboard>(0, UINT64_MAX);
     random_row = std::uniform_int_distribution<Bitboard>(0, UNIQUE_ROWS-1);
 
@@ -227,9 +229,17 @@ int max_value(Bitboard b) {
     for (Square s = SQ_11; s <= SQ_44; ++s) {
         value = bits_to_value(get_bits(b, s));
         max = std::max(max, value);
-    }   
+    }
 
     return max;
+}
+
+
+int board_score(Bitboard b) {
+    int score = 0;
+    for (Square s = SQ_11; s <= SQ_44; ++s)
+        score += bits_to_value(get_bits(b, s));
+    return score;
 }
 
 

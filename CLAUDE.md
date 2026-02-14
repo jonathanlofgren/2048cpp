@@ -16,7 +16,23 @@ ctest --test-dir build --output-on-failure
 ## Run
 
 ```bash
-./build/2048cpp
+./build/2048cpp                        # single game, random seed
+./build/2048cpp --seed 42              # single game, deterministic
+./build/2048cpp --games 50 --seed 42   # 50 games, seeds 42..91
+./build/2048cpp -v                     # verbose move-by-move output
+```
+
+## Benchmark
+
+```bash
+# Quick comparison (50 games, deterministic)
+./build/2048cpp --games 50 --seed 42
+
+# Compare two branches:
+git stash && ./build/2048cpp --games 50 --seed 42 > baseline.txt
+git stash pop && cmake --build build --parallel
+./build/2048cpp --games 50 --seed 42 > new.txt
+diff baseline.txt new.txt
 ```
 
 ## Architecture

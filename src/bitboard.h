@@ -28,13 +28,14 @@ extern Bitboard RowMoveRight[UNIQUE_ROWS];
 extern std::map<int, Bitboard> ValueToBits;
 
 // Random generator stuff
-extern std::default_random_engine generator;
+extern std::mt19937 generator;
 extern std::uniform_int_distribution<Bitboard> random_board;
 extern std::uniform_int_distribution<Bitboard> random_row;
 
 
 namespace Bitboards {
     void init();
+    void seed(unsigned s);
     std::string pretty(Bitboard b);
     std::string pretty(Move m);
 
@@ -61,6 +62,7 @@ Bitboard place_random(Bitboard b);
 
 int empty_squares(Bitboard b);
 int max_value(Bitboard b);
+int board_score(Bitboard b);
 
 std::vector<PossibleMove> possible_moves(Bitboard b);
 Bitboard row_to_col(Bitboard b, Col c);
