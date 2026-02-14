@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <future>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 #include "types.h"
@@ -13,6 +14,16 @@
 namespace {
     thread_local uint64_t tl_node_counter{0};
     std::atomic<uint64_t> global_node_counter{0};
+
+    // Transposition table: one map per depth level, thread-local to avoid
+    // contention between the parallel async tasks.
+    static constexpr int TT_DEPTHS = 8;
+    thread_local std::unordered_map<Bitboard, double> tt[TT_DEPTHS];
+
+    void tt_clear() {
+        for (int i = 0; i < TT_DEPTHS; ++i)
+            tt[i].clear();
+    }
 }
 
 // Snake gradient: values decrease along a zigzag path from corner.
@@ -153,6 +164,10 @@ static void flush_tl_nodes() {
 }
 
 double Search::_value_expected_node(Bitboard board, int depth, double prob) {
+    // Clear TT at the start of each top-level async task
+    if (depth == 0)
+        tt_clear();
+
     Bitboard expanded[32];
     expand_inplace(board, expanded);
 
@@ -186,9 +201,16 @@ double Search::_value_max_node(Bitboard board, int depth, double prob) {
     if (depth >= MAX_DEPTH || prob < PROBABILITY_CUTOFF)
         return evaluate(board);
 
+    // Transposition table lookup
+    auto& table = tt[depth];
+    auto tt_it = table.find(board);
+    if (tt_it != table.end())
+        return tt_it->second;
+
     auto possible = possible_moves(board);
 
     if (possible.size() == 0) {
+        table[board] = 0.0;
         return 0.0;
     }
 
@@ -199,6 +221,7 @@ double Search::_value_max_node(Bitboard board, int depth, double prob) {
         if (val > max) max = val;
     }
 
+    table[board] = max;
     return max;
 }
 
