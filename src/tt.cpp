@@ -5,10 +5,25 @@
 
 // Single shared flat hash table, allocated once at first use.
 //
-// Lockless concurrent access: async workers read/write without locks.
-// To detect torn reads (key from one write, value from another), the stored
-// key is XORed with the value bits — same technique as Stockfish. A torn
-// read produces a key mismatch with overwhelming probability.
+// Multiple async workers read and write the same table without locks.
+// A TTEntry has two 8-byte fields (key, data). On x86-64 each 8-byte
+// aligned access is atomic, but writing the pair is NOT atomic — another
+// thread can read between the two stores. This is a "torn read":
+//
+//   Thread A writes entry:  key = K_a              (first store)
+//   Thread B writes entry:  key = K_b, data = D_b  (overwrites both)
+//   Thread A writes entry:  data = D_a             (second store)
+//   Result in memory:       {K_b, D_a}             (half from each thread)
+//
+// A reader now sees K_b with D_a — a valid-looking entry with the wrong
+// value. If it only checked `entry.key == lookup_key`, it would return
+// D_a for a lookup of K_b, silently corrupting the search.
+//
+// Fix (from Stockfish): store `key XOR data` instead of `key` alone.
+// On probe, recover the key as `entry.key XOR entry.data`. A torn read
+// produces `K_b XOR D_a`, which won't equal any valid lookup key. The
+// probe misses and we just recompute — no wrong values, only lost cache
+// hits.
 //
 // Depth and generation are folded into the key via XOR so that:
 // (1) entries from previous moves don't match (O(1) clearing), and
@@ -18,7 +33,7 @@ static constexpr int TT_BITS = 20;
 static constexpr int TT_SIZE = 1 << TT_BITS;
 
 struct TTEntry {
-    uint64_t key;   // tt_key ^ double_bits(value)
+    uint64_t key;   // make_key() ^ double_bits(value)  (XOR'd for torn-read safety)
     uint64_t data;  // double_bits(value)
 };
 
@@ -52,6 +67,7 @@ bool TT::probe(Bitboard board, int depth, double& value) {
     if (!g_enabled) return false;
     uint64_t key = make_key(board, depth);
     TTEntry e = g_table[index(key)];
+    // Recover original key: (key ^ data) ^ data == key. Torn reads fail here.
     if ((e.key ^ e.data) == key) {
         value = bits_to_double(e.data);
         return true;
@@ -63,7 +79,7 @@ void TT::store(Bitboard board, int depth, double value) {
     if (!g_enabled) return;
     uint64_t key = make_key(board, depth);
     uint64_t val_bits = double_to_bits(value);
-    g_table[index(key)] = {key ^ val_bits, val_bits};
+    g_table[index(key)] = {key ^ val_bits, val_bits};  // XOR key so probe can detect torn reads
 }
 
 void TT::set_enabled(bool enabled) {
