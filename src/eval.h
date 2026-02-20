@@ -5,13 +5,14 @@
 
 namespace Eval {
 
-// Tunable weights
-constexpr float GRAD_WEIGHT  = 5.0f;    // Snake gradient positioning
-constexpr float MONO_WEIGHT  = 47.0f;   // Monotonicity violation penalty
-constexpr float MONO_POWER   = 4.0f;    // Exponent for monotonicity scaling
-constexpr float EMPTY_WEIGHT = 270.0f;  // Empty cell bonus
-constexpr float MERGE_WEIGHT = 700.0f;  // Adjacent-equal-tile bonus
+// Tunable weights (settable at runtime before init())
+extern float GRAD_WEIGHT;    // Snake gradient positioning
+extern float MONO_WEIGHT;    // Monotonicity violation penalty
+extern float MONO_POWER;     // Exponent for monotonicity scaling
+extern float EMPTY_WEIGHT;   // Empty cell bonus
+extern float MERGE_WEIGHT;   // Adjacent-equal-tile bonus
 
+void set_weights(float grad, float mono, float mono_power, float empty, float merge);
 void init();
 float evaluate(Bitboard board);
 

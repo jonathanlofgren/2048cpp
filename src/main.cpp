@@ -10,6 +10,7 @@
 
 #include "types.h"
 #include "bitboard.h"
+#include "eval.h"
 #include "search.h"
 #include "tt.h"
 
@@ -20,6 +21,11 @@ struct Options {
     int num_threads = 0;
     int tt_bits = 21;
     bool tt_enabled = true;
+    float grad_weight  = -1;
+    float mono_weight  = -1;
+    float mono_power   = -1;
+    float empty_weight = -1;
+    float merge_weight = -1;
 };
 
 Options parse_args(int argc, char *argv[]) {
@@ -37,6 +43,16 @@ Options parse_args(int argc, char *argv[]) {
             opts.num_threads = std::stoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--tt-bits") == 0 && i + 1 < argc) {
             opts.tt_bits = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--grad-weight") == 0 && i + 1 < argc) {
+            opts.grad_weight = std::stof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--mono-weight") == 0 && i + 1 < argc) {
+            opts.mono_weight = std::stof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--mono-power") == 0 && i + 1 < argc) {
+            opts.mono_power = std::stof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--empty-weight") == 0 && i + 1 < argc) {
+            opts.empty_weight = std::stof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--merge-weight") == 0 && i + 1 < argc) {
+            opts.merge_weight = std::stof(argv[++i]);
         }
     }
     return opts;
@@ -185,6 +201,18 @@ int main(int argc, char *argv[]) {
     Options opts = parse_args(argc, argv);
 
     Bitboards::init();
+
+    if (opts.grad_weight >= 0 || opts.mono_weight >= 0 || opts.mono_power >= 0 ||
+        opts.empty_weight >= 0 || opts.merge_weight >= 0) {
+        Eval::set_weights(
+            opts.grad_weight  >= 0 ? opts.grad_weight  : Eval::GRAD_WEIGHT,
+            opts.mono_weight  >= 0 ? opts.mono_weight  : Eval::MONO_WEIGHT,
+            opts.mono_power   >= 0 ? opts.mono_power   : Eval::MONO_POWER,
+            opts.empty_weight >= 0 ? opts.empty_weight : Eval::EMPTY_WEIGHT,
+            opts.merge_weight >= 0 ? opts.merge_weight : Eval::MERGE_WEIGHT
+        );
+    }
+
     Search::init();
     if (!opts.tt_enabled) TT::set_enabled(false);
     TT::init(opts.tt_bits);

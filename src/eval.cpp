@@ -4,6 +4,21 @@
 
 #include "bitboard.h"
 
+// Default weights
+float Eval::GRAD_WEIGHT  = 5.0f;
+float Eval::MONO_WEIGHT  = 47.0f;
+float Eval::MONO_POWER   = 4.0f;
+float Eval::EMPTY_WEIGHT = 270.0f;
+float Eval::MERGE_WEIGHT = 700.0f;
+
+void Eval::set_weights(float grad, float mono, float mono_power, float empty, float merge) {
+    GRAD_WEIGHT = grad;
+    MONO_WEIGHT = mono;
+    MONO_POWER = mono_power;
+    EMPTY_WEIGHT = empty;
+    MERGE_WEIGHT = merge;
+}
+
 // Tile weight: rank * 2^rank (super-exponential).
 // Makes high-tile placement astronomically more important:
 //   rank 1 (tile 2)    -> 2
