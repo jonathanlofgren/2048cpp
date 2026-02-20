@@ -28,12 +28,9 @@ const double SnakeGrad[ROW_N][4] = {
     { 0,  1,  2,  3},  // ROW_4: right to left
 };
 
-// Per-row lookup tables
-double GradScore[SHIFTED_ROWS];   // snake gradient
-double MonoScore[UNIQUE_ROWS];    // monotonicity penalty (power-weighted)
-double SmoothScore[UNIQUE_ROWS];  // smoothness penalty
-double EmptyScore[UNIQUE_ROWS];   // empty tile count per row
-double MergeScore[UNIQUE_ROWS];   // adjacent equal tile count
+// Combined evaluation lookup tables (weights baked in at init)
+double RowEval[SHIFTED_ROWS];   // per-row: grad + mono + smooth + empty + merge
+double ColEval[UNIQUE_ROWS];    // per-col: mono + smooth + merge
 
 const double PROBABILITY_CUTOFF = 0.001;
 
@@ -77,24 +74,7 @@ void Search::init() {
         exp[2] = (b >>  8) & 0xF;
         exp[3] = (b >> 12) & 0xF;
 
-        // Snake gradient: weighted sum of actual tile values × position weight
-        for (Row r = ROW_1; r <= ROW_4; ++r) {
-            double value = 0;
-            for (int c = 0; c < 4; ++c) {
-                double tile_val = (exp[c] > 0) ? (double)(1 << exp[c]) : 0;
-                value += SnakeGrad[r][c] * tile_val;
-            }
-            GradScore[UNIQUE_ROWS * r + b] = value;
-        }
-
-        // Empty count for this row
-        int row_empty = 0;
-        for (int i = 0; i < 4; ++i)
-            if (exp[i] == 0) ++row_empty;
-        EmptyScore[b] = row_empty;
-
         // Monotonicity: penalty using actual tile power values
-        // This makes inversions among high tiles much more costly
         double left_pen = 0, right_pen = 0;
         for (int i = 0; i < 3; ++i) {
             double v_cur  = (exp[i]   > 0) ? (double)(1 << exp[i])   : 0;
@@ -102,47 +82,54 @@ void Search::init() {
             if (v_next > v_cur) left_pen  += v_next - v_cur;
             if (v_cur > v_next) right_pen += v_cur - v_next;
         }
-        MonoScore[b] = -std::min(left_pen, right_pen);
+        double mono = -std::min(left_pen, right_pen);
 
         // Smoothness: penalty for differences between adjacent non-zero tiles
         double smooth = 0;
         for (int i = 0; i < 3; ++i) {
-            if (exp[i] != 0 && exp[i + 1] != 0) {
+            if (exp[i] != 0 && exp[i + 1] != 0)
                 smooth -= std::abs(exp[i] - exp[i + 1]);
-            }
         }
-        SmoothScore[b] = smooth;
 
         // Merge potential: count adjacent equal non-zero tiles
-        int merges = 0;
+        double merge = 0;
         for (int i = 0; i < 3; ++i) {
             if (exp[i] != 0 && exp[i] == exp[i + 1])
-                ++merges;
+                ++merge;
         }
-        MergeScore[b] = merges;
+
+        // Empty count
+        double empty = 0;
+        for (int i = 0; i < 4; ++i)
+            if (exp[i] == 0) ++empty;
+
+        // Column eval: row-independent components only
+        ColEval[b] = MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth
+                   + MERGE_WEIGHT * merge;
+
+        // Row eval: column eval + gradient + empty (both are row-dependent)
+        for (Row r = ROW_1; r <= ROW_4; ++r) {
+            double grad = 0;
+            for (int c = 0; c < 4; ++c) {
+                double tile_val = (exp[c] > 0) ? (double)(1 << exp[c]) : 0;
+                grad += SnakeGrad[r][c] * tile_val;
+            }
+            RowEval[UNIQUE_ROWS * r + b] = GRAD_WEIGHT * grad + ColEval[b]
+                                          + EMPTY_WEIGHT * empty;
+        }
     }
 }
 
 double evaluate_board(Bitboard board) {
-    double grad = 0, mono = 0, smooth = 0, empty = 0, merge = 0;
+    double score = 0;
 
-    for (Row r = ROW_1; r <= ROW_4; ++r) {
-        Bitboard row_bits = get_bits(board, r);
-        grad   += GradScore[UNIQUE_ROWS * r + row_bits];
-        mono   += MonoScore[row_bits];
-        smooth += SmoothScore[row_bits];
-        empty  += EmptyScore[row_bits];
-        merge  += MergeScore[row_bits];
-    }
-    for (Col c = COL_1; c <= COL_4; ++c) {
-        Bitboard col_bits = get_bits(board, c);
-        mono   += MonoScore[col_bits];
-        smooth += SmoothScore[col_bits];
-        merge  += MergeScore[col_bits];
-    }
+    for (Row r = ROW_1; r <= ROW_4; ++r)
+        score += RowEval[UNIQUE_ROWS * r + get_bits(board, r)];
 
-    return GRAD_WEIGHT * grad + MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth
-         + EMPTY_WEIGHT * empty + MERGE_WEIGHT * merge;
+    for (Col c = COL_1; c <= COL_4; ++c)
+        score += ColEval[get_bits(board, c)];
+
+    return score;
 }
 
 void expand_inplace(Bitboard b, Bitboard *expanded) {
