@@ -1,79 +1,74 @@
 #include "eval.h"
 
-#include <algorithm>
 #include <cmath>
 
 #include "bitboard.h"
 
-// Snake gradient: values decrease along a zigzag path from corner.
-// Row 1: left to right, Row 2: right to left, etc.
-// This keeps the largest tile anchored in the corner with a natural
-// path for building chains.
-static const double SnakeGrad[ROW_N][4] = {
-    {15, 14, 13, 12},  // ROW_1: left to right
-    { 8,  9, 10, 11},  // ROW_2: right to left
-    { 7,  6,  5,  4},  // ROW_3: left to right
-    { 0,  1,  2,  3},  // ROW_4: right to left
+// Tile weight: rank * 2^rank (super-exponential).
+// Makes high-tile placement astronomically more important:
+//   rank 1 (tile 2)    -> 2
+//   rank 5 (tile 32)   -> 160
+//   rank 10 (tile 1024) -> 10240
+//   rank 11 (tile 2048) -> 22528
+//   rank 13 (tile 8192) -> 106496
+static float tile_weight[16];
+
+// Snake path weights: largest in one corner, zigzag to smallest in opposite.
+static const float Snake[ROW_N][4] = {
+    {15, 14, 13, 12},
+    { 8,  9, 10, 11},
+    { 7,  6,  5,  4},
+    { 0,  1,  2,  3},
 };
 
-// Combined evaluation lookup tables (weights baked in at init)
-static float RowEval[SHIFTED_ROWS];   // per-row: grad + mono + smooth + empty + merge
-static float ColEval[UNIQUE_ROWS];    // per-col: mono + smooth + merge
+static float RowEval[SHIFTED_ROWS];
+static float ColEval[UNIQUE_ROWS];
 
 void Eval::init() {
-    for (Bitboard b = 0x0ULL; b < UNIQUE_ROWS; ++b) {
+    tile_weight[0] = 0;
+    for (int r = 1; r < 16; ++r)
+        tile_weight[r] = (float)(r * (1 << r));
 
-        // Extract nibble exponents
-        int exp[4];
-        exp[0] = (b >>  0) & 0xF;
-        exp[1] = (b >>  4) & 0xF;
-        exp[2] = (b >>  8) & 0xF;
-        exp[3] = (b >> 12) & 0xF;
+    for (int b = 0; b < UNIQUE_ROWS; ++b) {
+        int r[4] = {
+            (b >>  0) & 0xF,
+            (b >>  4) & 0xF,
+            (b >>  8) & 0xF,
+            (b >> 12) & 0xF,
+        };
 
-        // Monotonicity: penalty using actual tile power values.
-        // Power values create strong pressure to keep large tiles in order.
-        double left_pen = 0, right_pen = 0;
-        for (int i = 0; i < 3; ++i) {
-            double v_cur  = (exp[i]   > 0) ? (double)(1 << exp[i])   : 0;
-            double v_next = (exp[i+1] > 0) ? (double)(1 << exp[i+1]) : 0;
-            if (v_next > v_cur) left_pen  += v_next - v_cur;
-            if (v_cur > v_next) right_pen += v_cur - v_next;
-        }
-        double mono = -std::min(left_pen, right_pen);
-
-        // Smoothness: penalty for differences between adjacent non-zero tiles
-        double smooth = 0;
-        for (int i = 0; i < 3; ++i) {
-            if (exp[i] != 0 && exp[i + 1] != 0)
-                smooth -= std::abs(exp[i] - exp[i + 1]);
-        }
-
-        // Merge potential: count adjacent equal non-zero tiles
-        double merge = 0;
-        for (int i = 0; i < 3; ++i) {
-            if (exp[i] != 0 && exp[i] == exp[i + 1])
-                ++merge;
-        }
-
-        // Empty count
-        double empty = 0;
+        // Empty cells: survival
+        float empty = 0;
         for (int i = 0; i < 4; ++i)
-            if (exp[i] == 0) ++empty;
+            if (r[i] == 0) empty += 1.0f;
 
-        // Column eval: row-independent components only
-        double col_eval = MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth
-                        + MERGE_WEIGHT * merge;
-        ColEval[b] = (float)col_eval;
+        // Merges: adjacent equal non-zero tiles
+        float merges = 0;
+        for (int i = 0; i < 3; ++i)
+            if (r[i] != 0 && r[i] == r[i + 1])
+                merges += 1.0f;
 
-        // Row eval: column eval + gradient + empty (both are row-dependent)
-        for (Row r = ROW_1; r <= ROW_4; ++r) {
-            double grad = 0;
-            for (int c = 0; c < 4; ++c) {
-                double tile_val = (exp[c] > 0) ? (double)(1 << exp[c]) : 0;
-                grad += SnakeGrad[r][c] * tile_val;
-            }
-            RowEval[UNIQUE_ROWS * r + b] = (float)(GRAD_WEIGHT * grad + col_eval
-                                                   + EMPTY_WEIGHT * empty);
+        // Monotonicity: rank^MONO_POWER penalty for out-of-order pairs.
+        float mono_l = 0, mono_r = 0;
+        for (int i = 0; i < 3; ++i) {
+            float a = std::pow((float)r[i],   MONO_POWER);
+            float b_ = std::pow((float)r[i+1], MONO_POWER);
+            if (a > b_) mono_l += a - b_;
+            else        mono_r += b_ - a;
+        }
+        float mono = -std::min(mono_l, mono_r);
+
+        // ColEval: monotonicity + merges (no positional info)
+        ColEval[b] = MONO_WEIGHT * mono + MERGE_WEIGHT * merges;
+
+        // RowEval: add snake gradient + empty bonus (row-position dependent)
+        for (Row row = ROW_1; row <= ROW_4; ++row) {
+            float grad = 0;
+            for (int c = 0; c < 4; ++c)
+                grad += Snake[row][c] * tile_weight[r[c]];
+
+            RowEval[UNIQUE_ROWS * row + b] =
+                GRAD_WEIGHT * grad + ColEval[b] + EMPTY_WEIGHT * empty;
         }
     }
 }

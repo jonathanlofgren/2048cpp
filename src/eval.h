@@ -5,17 +5,14 @@
 
 namespace Eval {
 
-// Weights for evaluation components
-constexpr double GRAD_WEIGHT   = 5.0;
-constexpr double MONO_WEIGHT   = 1.0;
-constexpr double SMOOTH_WEIGHT = 0.1;
-constexpr double EMPTY_WEIGHT  = 100.0;
-constexpr double MERGE_WEIGHT  = 10.0;
+// Tunable weights
+constexpr float GRAD_WEIGHT  = 5.0f;    // Snake gradient positioning
+constexpr float MONO_WEIGHT  = 47.0f;   // Monotonicity violation penalty
+constexpr float MONO_POWER   = 4.0f;    // Exponent for monotonicity scaling
+constexpr float EMPTY_WEIGHT = 270.0f;  // Empty cell bonus
+constexpr float MERGE_WEIGHT = 700.0f;  // Adjacent-equal-tile bonus
 
-// Pre-compute RowEval/ColEval lookup tables. Must be called once at startup.
 void init();
-
-// O(1) board evaluation via table lookup (4 row + 4 col lookups).
 float evaluate(Bitboard board);
 
 }
