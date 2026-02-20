@@ -21,8 +21,8 @@
 // is derived from the full 64-bit key, while only the upper 32 bits are
 // stored for verification.
 
-static constexpr int TT_BITS = 20;
-static constexpr int TT_SIZE = 1 << TT_BITS;
+static int g_tt_bits = 21;
+static int g_tt_size = 1 << 21;
 
 struct TTEntry {
     uint32_t key;   // upper 32 bits of make_key() ^ float_bits(value)
@@ -46,13 +46,25 @@ static inline uint64_t make_key(Bitboard board, int depth) {
 }
 
 static inline uint32_t index(uint64_t key) {
-    return static_cast<uint32_t>((key * 0x9E3779B97F4A7C15ULL) >> (64 - TT_BITS));
+    return static_cast<uint32_t>((key * 0x9E3779B97F4A7C15ULL) >> (64 - g_tt_bits));
+}
+
+void TT::init(int bits) {
+    std::free(g_table);
+    g_tt_bits = bits;
+    g_tt_size = 1 << bits;
+    g_table = static_cast<TTEntry*>(std::calloc(g_tt_size, sizeof(TTEntry)));
+    g_gen_salt = 0;
 }
 
 void TT::clear() {
     if (!g_table)
-        g_table = static_cast<TTEntry*>(std::calloc(TT_SIZE, sizeof(TTEntry)));
+        init();
     g_gen_salt += 0x6C62272E07BB0143ULL;
+}
+
+int TT::get_bits() {
+    return g_tt_bits;
 }
 
 bool TT::probe(Bitboard board, int depth, float& value) {
