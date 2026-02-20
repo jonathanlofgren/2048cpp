@@ -60,7 +60,7 @@ static inline uint32_t index(uint64_t key) {
 void TT::clear() {
     if (!g_table)
         g_table = static_cast<TTEntry*>(std::calloc(TT_SIZE, sizeof(TTEntry)));
-    g_gen_salt += 0x6C62272E07BB0142ULL;
+    g_gen_salt += 0x6C62272E07BB0143ULL;
 }
 
 bool TT::probe(Bitboard board, int depth, double& value) {
