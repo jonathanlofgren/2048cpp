@@ -6,8 +6,8 @@
 namespace TT {
 
 void clear();
-bool probe(Bitboard board, int depth, double& value);
-void store(Bitboard board, int depth, double value);
+bool probe(Bitboard board, int depth, float& value);
+void store(Bitboard board, int depth, float value);
 void set_enabled(bool enabled);
 
 }

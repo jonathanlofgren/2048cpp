@@ -11,10 +11,10 @@ namespace Search {
 
     struct Result {
         Move move;
-        double value;
+        float value;
     };
 
-    double evaluate(Bitboard b);
+    float evaluate(Bitboard b);
     Result expectimax_parallel(Bitboard board);
 
     uint64_t get_nodes();

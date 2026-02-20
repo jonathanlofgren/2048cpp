@@ -35,8 +35,8 @@ const double SnakeGrad[ROW_N][4] = {
 };
 
 // Combined evaluation lookup tables (weights baked in at init)
-double RowEval[SHIFTED_ROWS];   // per-row: grad + mono + smooth + empty + merge
-double ColEval[UNIQUE_ROWS];    // per-col: mono + smooth + merge
+float RowEval[SHIFTED_ROWS];   // per-row: grad + mono + smooth + empty + merge
+float ColEval[UNIQUE_ROWS];    // per-col: mono + smooth + merge
 
 const double PROBABILITY_CUTOFF = 0.001;
 const double GRAD_WEIGHT   = 5.0;
@@ -51,8 +51,8 @@ int current_max_depth;
 // Thread pool
 std::unique_ptr<ThreadPool> pool;
 
-double evaluate_board(Bitboard board) {
-    double score = 0;
+float evaluate_board(Bitboard board) {
+    float score = 0;
     Bitboard t = transpose(board);
 
     for (Row r = ROW_1; r <= ROW_4; ++r) {
@@ -98,14 +98,14 @@ int generate_tile_placements(Bitboard b, Bitboard *out) {
 }
 
 // Forward declarations for mutual recursion
-double value_expected_node(Bitboard board, int depth, double prob);
-double value_max_node(Bitboard board, int depth, double prob);
+float value_expected_node(Bitboard board, int depth, double prob);
+float value_max_node(Bitboard board, int depth, double prob);
 
-double value_expected_node(Bitboard board, int depth, double prob) {
+float value_expected_node(Bitboard board, int depth, double prob) {
     Bitboard expanded[32];
     int n_empty = generate_tile_placements(board, expanded);
 
-    double expected_value = 0;
+    float expected_value = 0;
     double prob2 = 0.9 / n_empty;
     double prob4 = 0.1 / n_empty;
 
@@ -115,30 +115,30 @@ double value_expected_node(Bitboard board, int depth, double prob) {
         return Search::evaluate(board);
 
     for (int i = 0; i < n_empty * 2; i += 2) {
-        expected_value += prob2 * value_max_node(expanded[i],   depth + 1, prob * prob2) +
-                          prob4 * value_max_node(expanded[i+1], depth + 1, prob * prob4);
+        expected_value += (float)(prob2 * value_max_node(expanded[i],   depth + 1, prob * prob2) +
+                                  prob4 * value_max_node(expanded[i+1], depth + 1, prob * prob4));
     }
 
     return expected_value;
 }
 
-double value_max_node(Bitboard board, int depth, double prob) {
+float value_max_node(Bitboard board, int depth, double prob) {
     if (depth >= current_max_depth || prob < PROBABILITY_CUTOFF)
         return Search::evaluate(board);
 
-    double cached;
+    float cached;
     if (TT::probe(board, depth, cached))
         return cached;
 
     auto possible = possible_moves(board);
 
-    double result;
+    float result;
     if (possible.size() == 0) {
-        result = 0.0;
+        result = 0.0f;
     } else {
-        result = std::numeric_limits<double>::lowest();
+        result = std::numeric_limits<float>::lowest();
         for (auto it = possible.begin(); it != possible.end(); ++it) {
-            double val = value_expected_node(it->board, depth, prob);
+            float val = value_expected_node(it->board, depth, prob);
             if (val > result) result = val;
         }
     }
@@ -190,8 +190,9 @@ void Search::init() {
             if (exp[i] == 0) ++empty;
 
         // Column eval: row-independent components only
-        ColEval[b] = MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth
-                   + MERGE_WEIGHT * merge;
+        double col_eval = MONO_WEIGHT * mono + SMOOTH_WEIGHT * smooth
+                        + MERGE_WEIGHT * merge;
+        ColEval[b] = (float)col_eval;
 
         // Row eval: column eval + gradient + empty (both are row-dependent)
         for (Row r = ROW_1; r <= ROW_4; ++r) {
@@ -200,8 +201,8 @@ void Search::init() {
                 double tile_val = (exp[c] > 0) ? (double)(1 << exp[c]) : 0;
                 grad += SnakeGrad[r][c] * tile_val;
             }
-            RowEval[UNIQUE_ROWS * r + b] = GRAD_WEIGHT * grad + ColEval[b]
-                                          + EMPTY_WEIGHT * empty;
+            RowEval[UNIQUE_ROWS * r + b] = (float)(GRAD_WEIGHT * grad + col_eval
+                                                   + EMPTY_WEIGHT * empty);
         }
     }
 }
@@ -216,7 +217,7 @@ void Search::shutdown_pool() {
     pool.reset();
 }
 
-double Search::evaluate(Bitboard b) {
+float Search::evaluate(Bitboard b) {
     ++tl_node_counter;
     return evaluate_board(b);
 }
@@ -247,12 +248,12 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
     // For each legal move, expand the tile-placement level on the main thread
     // and submit individual value_max_node calls to the pool. This creates
     // ~20 tasks per move (~80 total) instead of ~4 tasks per search step.
-    double move_values[MOVE_N] = {};
+    float move_values[MOVE_N] = {};
 
     struct TaskResult {
-        double value;
+        float value;
         int move_idx;
-        double weight;  // prob2 or prob4
+        float weight;  // prob2 or prob4
     };
 
     std::vector<std::future<TaskResult>> futures;
@@ -264,8 +265,8 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
         Bitboard expanded[32];
         int n_empty = generate_tile_placements(moved, expanded);
 
-        double prob2 = 0.9 / n_empty;
-        double prob4 = 0.1 / n_empty;
+        float prob2 = 0.9f / n_empty;
+        float prob4 = 0.1f / n_empty;
 
         // If the most probable child is below cutoff, all children are leaves.
         // Compute evaluate() inline — no need to submit tasks.
@@ -281,14 +282,14 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
 
             // Submit 2-tile child
             futures.push_back(pool->submit([child2, prob2, idx]() -> TaskResult {
-                double val = value_max_node(child2, 1, prob2);
+                float val = value_max_node(child2, 1, prob2);
                 flush_tl_nodes();
                 return {val, idx, prob2};
             }));
 
             // Submit 4-tile child
             futures.push_back(pool->submit([child4, prob4, idx]() -> TaskResult {
-                double val = value_max_node(child4, 1, prob4);
+                float val = value_max_node(child4, 1, prob4);
                 flush_tl_nodes();
                 return {val, idx, prob4};
             }));
@@ -302,7 +303,7 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
     }
 
     Move best_move = NULL_MOVE;
-    double max_value = std::numeric_limits<double>::lowest();
+    float max_value = std::numeric_limits<float>::lowest();
 
     for (int i = 0; i < n; i++) {
         if (move_values[i] > max_value) {

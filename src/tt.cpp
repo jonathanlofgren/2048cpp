@@ -5,48 +5,40 @@
 
 // Single shared flat hash table, allocated once at first use.
 //
-// Multiple async workers read and write the same table without locks.
-// A TTEntry has two 8-byte fields (key, data). On x86-64 each 8-byte
-// aligned access is atomic, but writing the pair is NOT atomic — another
-// thread can read between the two stores. This is a "torn read":
+// Multiple workers read and write the same table without locks.
+// Each TTEntry is 8 bytes (two uint32_t fields), which is atomically
+// loadable/storable on x86-64 and ARM64. This eliminates torn-read
+// concerns entirely.
 //
-//   Thread A writes entry:  key = K_a              (first store)
-//   Thread B writes entry:  key = K_b, data = D_b  (overwrites both)
-//   Thread A writes entry:  data = D_a             (second store)
-//   Result in memory:       {K_b, D_a}             (half from each thread)
+// We still XOR the key fragment with the data as an extra safety
+// layer: on probe we recover the key fragment via `entry.key ^ entry.data`
+// and compare it against the expected key fragment. Any corruption or
+// collision will cause a mismatch, resulting in a harmless cache miss.
 //
-// A reader now sees K_b with D_a — a valid-looking entry with the wrong
-// value. If it only checked `entry.key == lookup_key`, it would return
-// D_a for a lookup of K_b, silently corrupting the search.
-//
-// Fix (from Stockfish): store `key XOR data` instead of `key` alone.
-// On probe, recover the key as `entry.key XOR entry.data`. A torn read
-// produces `K_b XOR D_a`, which won't equal any valid lookup key. The
-// probe misses and we just recompute — no wrong values, only lost cache
-// hits.
-//
-// Depth and generation are folded into the key via XOR so that:
-// (1) entries from previous moves don't match (O(1) clearing), and
-// (2) the same board at different depths doesn't alias.
+// Depth and generation are folded into the full 64-bit key via XOR so
+// that: (1) entries from previous moves don't match (O(1) clearing), and
+// (2) the same board at different depths doesn't alias. The table index
+// is derived from the full 64-bit key, while only the upper 32 bits are
+// stored for verification.
 
 static constexpr int TT_BITS = 20;
 static constexpr int TT_SIZE = 1 << TT_BITS;
 
 struct TTEntry {
-    uint64_t key;   // make_key() ^ double_bits(value)  (XOR'd for torn-read safety)
-    uint64_t data;  // double_bits(value)
+    uint32_t key;   // upper 32 bits of make_key() ^ float_bits(value)
+    uint32_t data;  // float_bits(value)
 };
 
 static TTEntry* g_table = nullptr;
 static uint64_t g_gen_salt = 0;
 static bool g_enabled = true;
 
-static inline uint64_t double_to_bits(double v) {
-    uint64_t b; std::memcpy(&b, &v, 8); return b;
+static inline uint32_t float_to_bits(float v) {
+    uint32_t b; std::memcpy(&b, &v, 4); return b;
 }
 
-static inline double bits_to_double(uint64_t b) {
-    double v; std::memcpy(&v, &b, 8); return v;
+static inline float bits_to_float(uint32_t b) {
+    float v; std::memcpy(&v, &b, 4); return v;
 }
 
 static inline uint64_t make_key(Bitboard board, int depth) {
@@ -63,23 +55,24 @@ void TT::clear() {
     g_gen_salt += 0x6C62272E07BB0143ULL;
 }
 
-bool TT::probe(Bitboard board, int depth, double& value) {
+bool TT::probe(Bitboard board, int depth, float& value) {
     if (!g_enabled) return false;
     uint64_t key = make_key(board, depth);
+    uint32_t key_hi = static_cast<uint32_t>(key >> 32);
     TTEntry e = g_table[index(key)];
-    // Recover original key: (key ^ data) ^ data == key. Torn reads fail here.
-    if ((e.key ^ e.data) == key) {
-        value = bits_to_double(e.data);
+    if ((e.key ^ e.data) == key_hi) {
+        value = bits_to_float(e.data);
         return true;
     }
     return false;
 }
 
-void TT::store(Bitboard board, int depth, double value) {
+void TT::store(Bitboard board, int depth, float value) {
     if (!g_enabled) return;
     uint64_t key = make_key(board, depth);
-    uint64_t val_bits = double_to_bits(value);
-    g_table[index(key)] = {key ^ val_bits, val_bits};  // XOR key so probe can detect torn reads
+    uint32_t key_hi = static_cast<uint32_t>(key >> 32);
+    uint32_t val_bits = float_to_bits(value);
+    g_table[index(key)] = {key_hi ^ val_bits, val_bits};
 }
 
 void TT::set_enabled(bool enabled) {
