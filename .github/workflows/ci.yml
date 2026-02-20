@@ -16,9 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake libomp-dev
-
       - name: Set compiler
         run: |
           if [ "${{ matrix.compiler }}" = "gcc" ]; then
@@ -57,17 +54,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: brew install cmake libomp
-
       - name: Configure
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
-            -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
-            -DOpenMP_C_LIB_NAMES="omp" \
-            -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
-            -DOpenMP_CXX_LIB_NAMES="omp" \
-            -DOpenMP_omp_LIBRARY="$(brew --prefix libomp)/lib/libomp.dylib"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --parallel

@@ -6,7 +6,7 @@
 namespace Search {
 
     void init();
-    void init_pool(int num_threads = 0);  // 0 = hardware_concurrency
+    int init_pool(int num_threads = 0);   // 0 = hardware_concurrency; returns actual count
     void shutdown_pool();
 
     struct Result {
