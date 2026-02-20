@@ -49,6 +49,22 @@ jobs:
       - name: Run benchmark (30 games, fixed seed)
         run: ./build/2048cpp --games 30 --seed 1000
 
+  tune-smoke:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: Smoke test tuner (1 generation, 3 games)
+        run: uv run tune.py --gens 1 --games 3 --seed 42
+
   build-macos:
     runs-on: macos-latest
     steps:
