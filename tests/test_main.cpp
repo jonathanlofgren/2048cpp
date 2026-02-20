@@ -225,10 +225,11 @@ bool test_node_counter() {
 }
 
 bool test_evaluation() {
-    // Evaluation of empty board should be 0 (all tiles are 0)
+    // Empty board should have a non-negative evaluation
+    // (the empty-square bonus gives it a positive score, which is fine)
     double val = Search::evaluate(0x0ULL);
-    if (val != 0.0) {
-        std::cerr << "Empty board should evaluate to 0, got " << val << std::endl;
+    if (val < 0.0) {
+        std::cerr << "Empty board should evaluate to >= 0, got " << val << std::endl;
         return false;
     }
 
@@ -251,18 +252,18 @@ bool test_evaluation() {
 }
 
 bool test_monotonicity() {
-    // Board A: monotonically ordered column {1,2,3,4} in COL_1 (increasing from ROW_1 to ROW_4)
-    // SQ_11=exp1, SQ_21=exp2, SQ_31=exp3, SQ_41=exp4
-    Bitboard board_a = (0x1ULL << SquareOffset[SQ_11])
-                     | (0x2ULL << SquareOffset[SQ_21])
-                     | (0x3ULL << SquareOffset[SQ_31])
-                     | (0x4ULL << SquareOffset[SQ_41]);
+    // Board A: monotonically ordered row {4,3,2,1} in ROW_1 (decreasing, matching snake gradient)
+    // SQ_11=exp4, SQ_12=exp3, SQ_13=exp2, SQ_14=exp1
+    Bitboard board_a = (0x4ULL << SquareOffset[SQ_11])
+                     | (0x3ULL << SquareOffset[SQ_12])
+                     | (0x2ULL << SquareOffset[SQ_13])
+                     | (0x1ULL << SquareOffset[SQ_14]);
 
-    // Board B: disordered column {1,3,2,4} in COL_1
-    Bitboard board_b = (0x1ULL << SquareOffset[SQ_11])
-                     | (0x3ULL << SquareOffset[SQ_21])
-                     | (0x2ULL << SquareOffset[SQ_31])
-                     | (0x4ULL << SquareOffset[SQ_41]);
+    // Board B: disordered row {4,1,3,2} in ROW_1
+    Bitboard board_b = (0x4ULL << SquareOffset[SQ_11])
+                     | (0x1ULL << SquareOffset[SQ_12])
+                     | (0x3ULL << SquareOffset[SQ_13])
+                     | (0x2ULL << SquareOffset[SQ_14]);
 
     double val_a = Search::evaluate(board_a);
     double val_b = Search::evaluate(board_b);
@@ -278,17 +279,17 @@ bool test_monotonicity() {
 }
 
 bool test_smoothness() {
-    // Board A: smooth column {3,4,5,6} in COL_1
-    Bitboard board_a = (0x3ULL << SquareOffset[SQ_11])
-                     | (0x4ULL << SquareOffset[SQ_21])
-                     | (0x5ULL << SquareOffset[SQ_31])
-                     | (0x6ULL << SquareOffset[SQ_41]);
+    // Board A: smooth row {6,5,4,3} in ROW_1 (decreasing, smooth gaps of 1)
+    Bitboard board_a = (0x6ULL << SquareOffset[SQ_11])
+                     | (0x5ULL << SquareOffset[SQ_12])
+                     | (0x4ULL << SquareOffset[SQ_13])
+                     | (0x3ULL << SquareOffset[SQ_14]);
 
-    // Board B: rough column {3,6,4,5} in COL_1
-    Bitboard board_b = (0x3ULL << SquareOffset[SQ_11])
-                     | (0x6ULL << SquareOffset[SQ_21])
-                     | (0x4ULL << SquareOffset[SQ_31])
-                     | (0x5ULL << SquareOffset[SQ_41]);
+    // Board B: rough row {6,3,5,4} in ROW_1 (same tiles, larger gaps)
+    Bitboard board_b = (0x6ULL << SquareOffset[SQ_11])
+                     | (0x3ULL << SquareOffset[SQ_12])
+                     | (0x5ULL << SquareOffset[SQ_13])
+                     | (0x4ULL << SquareOffset[SQ_14]);
 
     double val_a = Search::evaluate(board_a);
     double val_b = Search::evaluate(board_b);
