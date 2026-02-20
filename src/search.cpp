@@ -128,10 +128,11 @@ void Search::init() {
     Eval::init();
 }
 
-void Search::init_pool(int num_threads) {
+int Search::init_pool(int num_threads) {
     if (num_threads <= 0)
         num_threads = std::max(1, (int)std::thread::hardware_concurrency());
     pool = std::make_unique<ThreadPool>(num_threads);
+    return num_threads;
 }
 
 void Search::shutdown_pool() {

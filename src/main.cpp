@@ -188,7 +188,8 @@ int main(int argc, char *argv[]) {
     Search::init();
     if (!opts.tt_enabled) TT::set_enabled(false);
     TT::init(opts.tt_bits);
-    Search::init_pool(opts.num_threads);
+    int threads = Search::init_pool(opts.num_threads);
+    std::cout << "Threads: " << threads << std::endl;
 
     if (opts.num_games == 1) {
         if (opts.seed >= 0) Bitboards::seed(static_cast<unsigned>(opts.seed));
