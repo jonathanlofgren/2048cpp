@@ -21,13 +21,8 @@ int SquareColNormalize[SQUARE_N] = {
 };
 
 
-Bitboard RowToCol[SHIFTED_COLS];
-
-
-Bitboard MoveLeftMap[SHIFTED_ROWS];
-Bitboard MoveRightMap[SHIFTED_ROWS];
-Bitboard MoveUpMap[SHIFTED_COLS];
-Bitboard MoveDownMap[SHIFTED_COLS];
+Bitboard RowMoveLeft[UNIQUE_ROWS];
+Bitboard RowMoveRight[UNIQUE_ROWS];
 
 std::map<int, Bitboard> ValueToBits;
 
@@ -72,20 +67,8 @@ void Bitboards::init() {
         Vector vl = move_vector_left(v);
         Vector vr = move_vector_right(v);
 
-        Bitboard bl = vector_to_bitboard(vl);
-        Bitboard br = vector_to_bitboard(vr);
-
-        for (Row r = ROW_1; r <= ROW_4; ++r) {
-            MoveLeftMap[UNIQUE_ROWS*r+b] = bl << RowOffset[r];
-            MoveRightMap[UNIQUE_ROWS*r+b] = br << RowOffset[r];
-        }
-
-        for (Col c = COL_1; c <= COL_4; ++c) {
-            RowToCol[UNIQUE_ROWS*c+b] = row_to_col(b, c);
-            MoveUpMap[UNIQUE_ROWS*c+b] = row_to_col(bl, c);
-            MoveDownMap[UNIQUE_ROWS*c+b] = row_to_col(br, c);
-        }
-
+        RowMoveLeft[b] = vector_to_bitboard(vl);
+        RowMoveRight[b] = vector_to_bitboard(vr);
     }
 
 }
@@ -276,49 +259,26 @@ Bitboard row_to_col(Bitboard b, Col c) {
 
 
 Bitboard move_left(Bitboard b) {
-    Bitboard left = 0x0ULL;
-
-    for (Row r = ROW_1; r <= ROW_4; ++r) {
-        Bitboard row = get_bits(b, r);
-        left |= MoveLeftMap[UNIQUE_ROWS*r+row];
-    }
-
-    return left;
+    return RowMoveLeft[(b >>  0) & 0xFFFF]
+         | RowMoveLeft[(b >> 16) & 0xFFFF] << 16
+         | RowMoveLeft[(b >> 32) & 0xFFFF] << 32
+         | RowMoveLeft[(b >> 48) & 0xFFFF] << 48;
 }
 
-
 Bitboard move_right(Bitboard b) {
-    Bitboard right = 0x0ULL;
-
-    for (Row r = ROW_1; r <= ROW_4; ++r) {
-        Bitboard row = get_bits(b, r);
-        right |= MoveRightMap[UNIQUE_ROWS*r+row];
-    }
-
-    return right;
+    return RowMoveRight[(b >>  0) & 0xFFFF]
+         | RowMoveRight[(b >> 16) & 0xFFFF] << 16
+         | RowMoveRight[(b >> 32) & 0xFFFF] << 32
+         | RowMoveRight[(b >> 48) & 0xFFFF] << 48;
 }
 
 
 Bitboard move_up(Bitboard b) {
-    Bitboard up = 0x0ULL;
-
-    for (Col c = COL_1; c <= COL_4; ++c) {
-        Bitboard col = get_bits(b, c);
-        up |= MoveUpMap[UNIQUE_ROWS*c+col];
-    }
-
-    return up;
+    return transpose(move_left(transpose(b)));
 }
 
 Bitboard move_down(Bitboard b) {
-    Bitboard down = 0x0ULL;
-
-    for (Col c = COL_1; c <= COL_4; ++c) {
-        Bitboard col = get_bits(b, c);
-        down |= MoveDownMap[UNIQUE_ROWS*c+col];
-    }
-
-    return down;
+    return transpose(move_right(transpose(b)));
 }
 
 Bitboard make_move(Bitboard b, Move m) {
@@ -338,16 +298,15 @@ Bitboard make_move(Bitboard b, Move m) {
 
 
 
-std::vector<PossibleMove> possible_moves(Bitboard b) {
-    std::vector<PossibleMove> moves;
-    moves.reserve(4);
+PossibleMoves possible_moves(Bitboard b) {
+    PossibleMoves moves;
+    Bitboard t = transpose(b);
 
-    for (Move m = LEFT; m <= RIGHT; ++m) {
-        Bitboard bm = make_move(b, m);
-
-        if (b != bm)
-            moves.push_back({m, bm});
-    }
+    Bitboard bm;
+    bm = move_left(b);  if (bm != b) moves.push(LEFT, bm);
+    bm = move_right(b); if (bm != b) moves.push(RIGHT, bm);
+    bm = transpose(move_left(t));  if (bm != b) moves.push(UP, bm);
+    bm = transpose(move_right(t)); if (bm != b) moves.push(DOWN, bm);
 
     return moves;
 }

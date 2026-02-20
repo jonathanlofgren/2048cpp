@@ -312,6 +312,7 @@ struct TestCase {
 int main(int argc, char *argv[]) {
     Bitboards::init();
     Search::init();
+    Search::init_pool(2);
 
     std::vector<TestCase> tests = {
         {"bitboard_conversion", test_bitboard_conversion},

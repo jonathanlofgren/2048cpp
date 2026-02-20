@@ -7,8 +7,9 @@ A highly optimized AI solver for the game [2048](https://play2048.co/), combinin
 The AI uses three key techniques to play 2048 at high speed:
 
 - **Bitboard representation** — The entire 4x4 board is packed into a single 64-bit integer (4 bits per tile). All moves are executed via O(1) lookup tables pre-computed at startup (~5 MB).
-- **Expectimax search** — The game tree is searched with expectimax (depth 4), treating the random tile placement as a chance node. Branches with probability below 0.1% are pruned.
-- **Parallel search** — Each candidate move is evaluated concurrently via `std::async` for ~2-4x speedup, with no external dependencies.
+- **Expectimax search** — The game tree is searched with expectimax (adaptive depth 3-7), treating the random tile placement as a chance node. Branches with probability below 0.1% are pruned.
+- **Transposition table** — A lockless shared flat hash table caches evaluated positions across parallel workers, using XOR key verification to safely handle concurrent reads and writes without locks.
+- **Parallel search** — Tile-placement children are dispatched to a persistent thread pool (~80 tasks per search step), saturating all available cores with no external dependencies.
 
 ## Prerequisites
 
@@ -28,28 +29,12 @@ cmake --build build --parallel
 ## Running
 
 ```bash
-./build/2048cpp
-```
-
-The AI will play a full game of 2048, printing each move and the board state to stdout. At the end it reports the maximum tile reached and average time per move.
-
-Example output:
-```
-Move 1: Left
-Value: 48.6
-|-------+-------+-------+-------|
-|     0 |     0 |     0 |     0 |
-|-------+-------+-------+-------|
-|     0 |     0 |     0 |     0 |
-|-------+-------+-------+-------|
-|     0 |     0 |     0 |     2 |
-|-------+-------+-------+-------|
-|     0 |     0 |     2 |     4 |
-|-------+-------+-------+-------|
-...
-Game Over.
-Max: 2048
-Time taken parallel: 12.3 ms/move
+./build/2048cpp                        # single game, random seed
+./build/2048cpp --seed 42              # deterministic seed
+./build/2048cpp --games 50 --seed 42   # batch of 50 games (seeds 42..91)
+./build/2048cpp -v                     # verbose move-by-move output
+./build/2048cpp --no-tt                # disable transposition table
+./build/2048cpp --threads 8            # use 8 worker threads (default: all cores)
 ```
 
 ## Running Tests
@@ -65,6 +50,10 @@ ctest --test-dir build --output-on-failure
 ./build/2048tests empty_squares
 ./build/2048tests place_random
 ./build/2048tests evaluation
+./build/2048tests board_score
+./build/2048tests node_counter
+./build/2048tests monotonicity
+./build/2048tests smoothness
 ```
 
 ## Project Structure
@@ -75,7 +64,9 @@ ctest --test-dir build --output-on-failure
 ├── src/
 │   ├── types.h                 # Core types (Bitboard, Move, Square enums)
 │   ├── bitboard.h / bitboard.cpp   # Board representation and move operations
+│   ├── tt.h / tt.cpp               # Transposition table (lockless flat hash)
 │   ├── search.h / search.cpp       # Expectimax search algorithm
+│   ├── threadpool.h                # Header-only thread pool
 │   └── main.cpp                    # Game entry point
 └── tests/
     └── test_main.cpp           # Test suite

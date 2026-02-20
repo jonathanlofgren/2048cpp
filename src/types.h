@@ -56,6 +56,20 @@ struct PossibleMove {
     Bitboard board;
 };
 
+struct PossibleMoves {
+    PossibleMove data[MOVE_N];
+    int count = 0;
+
+    void push(Move m, Bitboard b) { data[count++] = {m, b}; }
+    int size() const { return count; }
+    PossibleMove* begin() { return data; }
+    PossibleMove* end() { return data + count; }
+    const PossibleMove* begin() const { return data; }
+    const PossibleMove* end() const { return data + count; }
+    PossibleMove& operator[](int i) { return data[i]; }
+    const PossibleMove& operator[](int i) const { return data[i]; }
+};
+
 const int UNIQUE_ROWS = 65536;
 const int SHIFTED_ROWS = UNIQUE_ROWS*ROW_N;
 const int SHIFTED_COLS = UNIQUE_ROWS*COL_N;

@@ -11,6 +11,36 @@
 #include "types.h"
 #include "bitboard.h"
 #include "search.h"
+#include "tt.h"
+
+struct Options {
+    bool verbose = false;
+    int num_games = 1;
+    int seed = -1;
+    int num_threads = 0;
+    int tt_bits = 21;
+    bool tt_enabled = true;
+};
+
+Options parse_args(int argc, char *argv[]) {
+    Options opts;
+    for (int i = 1; i < argc; i++) {
+        if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
+            opts.verbose = true;
+        } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+            opts.seed = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--games") == 0 && i + 1 < argc) {
+            opts.num_games = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--no-tt") == 0) {
+            opts.tt_enabled = false;
+        } else if (std::strcmp(argv[i], "--threads") == 0 && i + 1 < argc) {
+            opts.num_threads = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--tt-bits") == 0 && i + 1 < argc) {
+            opts.tt_bits = std::stoi(argv[++i]);
+        }
+    }
+    return opts;
+}
 
 struct GameResult {
     int moves;
@@ -45,15 +75,29 @@ GameResult play_game(bool verbose) {
         min_time = std::min(min_time, elapsed_ms);
         max_time = std::max(max_time, elapsed_ms);
 
-        // Make move and place a new square
+        // Make move — check for 65536 merge before placing random tile.
+        // Two rank-15 tiles (32768) merging overflows 4-bit representation,
+        // so detect it by counting rank-15 tiles before and after the move.
+        Bitboard prev = board;
         board = make_move(board, result.move);
-        board = place_random(board);
 
         if (verbose) {
             std::cout << "Move " << moves  << ": " << Bitboards::pretty(result.move) << std::endl;
             std::cout << "Value: " << result.value << std::endl;
-            std::cout << Bitboards::pretty(board) << std::endl;
         }
+
+        if (max_value(prev) == 32768 && max_value(board) < max_value(prev)) {
+            // 32768 + 32768 merge detected (overflowed to 0)
+            uint64_t nodes = Search::get_nodes();
+            if (verbose)
+                std::cout << "65536 tile reached!" << std::endl;
+            return {moves, 65536, board_score(prev), total_time, nodes};
+        }
+
+        board = place_random(board);
+
+        if (verbose)
+            std::cout << Bitboards::pretty(board) << std::endl;
 
         possible = possible_moves(board);
     }
@@ -138,44 +182,33 @@ void print_batch_summary(const std::vector<GameResult> &results) {
 
 
 int main(int argc, char *argv[]) {
-    bool verbose = false;
-    int num_games = 1;
-    unsigned base_seed = 0;
-    bool has_seed = false;
-
-    for (int i = 1; i < argc; i++) {
-        if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
-            verbose = true;
-        } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-            base_seed = static_cast<unsigned>(std::stoul(argv[++i]));
-            has_seed = true;
-        } else if (std::strcmp(argv[i], "--games") == 0 && i + 1 < argc) {
-            num_games = std::stoi(argv[++i]);
-        }
-    }
+    Options opts = parse_args(argc, argv);
 
     Bitboards::init();
     Search::init();
+    if (!opts.tt_enabled) TT::set_enabled(false);
+    TT::init(opts.tt_bits);
+    Search::init_pool(opts.num_threads);
 
-    if (num_games == 1) {
-        if (has_seed) Bitboards::seed(base_seed);
-        GameResult r = play_game(verbose);
+    if (opts.num_games == 1) {
+        if (opts.seed >= 0) Bitboards::seed(static_cast<unsigned>(opts.seed));
+        GameResult r = play_game(opts.verbose);
         print_single_result(r);
     } else {
-        if (!has_seed) {
-            base_seed = static_cast<unsigned>(
+        unsigned base_seed = opts.seed >= 0
+            ? static_cast<unsigned>(opts.seed)
+            : static_cast<unsigned>(
                 std::chrono::system_clock::now().time_since_epoch().count());
-        }
 
-        std::cout << "=== Benchmark: " << num_games << " games, base seed "
+        std::cout << "=== Benchmark: " << opts.num_games << " games, base seed "
                   << base_seed << " ===" << std::endl << std::endl;
 
         std::cout << "seed\tmoves\tmax_tile\tscore\ttime_s\tnodes" << std::endl;
 
         std::vector<GameResult> results;
-        results.reserve(num_games);
+        results.reserve(opts.num_games);
 
-        for (int i = 0; i < num_games; i++) {
+        for (int i = 0; i < opts.num_games; i++) {
             unsigned seed = base_seed + i;
             Bitboards::seed(seed);
             GameResult r = play_game(false);

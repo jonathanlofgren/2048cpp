@@ -16,10 +16,24 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# Performance flags (Release only)
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT MSVC)
+    add_compile_options(-march=native -ffast-math)
+endif()
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ipo_supported)
+    if(ipo_supported)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+endif()
+
 # Core library (shared between game and tests)
 add_library(2048core STATIC
     src/bitboard.cpp
+    src/eval.cpp
     src/search.cpp
+    src/tt.cpp
 )
 target_include_directories(2048core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
