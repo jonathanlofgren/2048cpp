@@ -244,9 +244,12 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
         return {NULL_MOVE, 0};
     }
 
-    // Adaptive depth: complex boards (more distinct tiles) get deeper search
+    // Adaptive depth: complex boards get deeper search.
+    // Base depth from distinct tile count, boosted when board is nearly full.
     int distinct = count_distinct_tiles(board);
-    current_max_depth = std::max(3, std::min(7, distinct - 2));
+    int empties = empty_squares(board);
+    int base_depth = std::max(3, std::min(8, distinct - 2));
+    current_max_depth = (empties <= 4) ? std::min(base_depth + 1, 9) : base_depth;
 
     TT::clear();
 
