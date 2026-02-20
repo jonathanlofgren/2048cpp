@@ -132,16 +132,28 @@ double evaluate_board(Bitboard board) {
     return score;
 }
 
-void expand_inplace(Bitboard b, Bitboard *expanded) {
+// Generate all possible boards resulting from the game placing a random tile.
+// For each empty square on board `b`, produces two successor boards: one with
+// a 2-tile (bits=1, 90% probability) and one with a 4-tile (bits=2, 10%).
+//
+// Output: fills `out[]` with interleaved pairs [board_with_2, board_with_4, ...].
+//         For N empty squares, writes 2*N entries starting at out[0].
+// Returns: the number of empty squares (N).
+//
+// Empty squares are found via bit manipulation: inverting the board and ANDing
+// shifted copies isolates a 1-bit at the LSB of each zero nibble. These bits
+// are then iterated with ctz + clear-lowest-bit.
+int generate_tile_placements(Bitboard b, Bitboard *out) {
+    Bitboard empty = ~b & (~b >> 1) & (~b >> 2) & (~b >> 3)
+                   & 0x1111111111111111ULL;
     int i = 0;
-    for (Square s = SQ_11; s <= SQ_44; ++s) {
-        if (!(b & SquareMask[s])) { 
-            expanded[i++] = b | (0x1ULL << SquareOffset[s]);    // Set a 2 in the empty square (probability 0.9)
-            expanded[i++] = b | (0x2ULL << SquareOffset[s]);    // Set a 4 in the empty square (probability 0.1)
-        }
+    while (empty) {
+        int bit = __builtin_ctzll(empty);
+        out[i++] = b | (1ULL << bit);    // 2-tile (probability 0.9)
+        out[i++] = b | (2ULL << bit);    // 4-tile (probability 0.1)
+        empty &= empty - 1;              // clear lowest set bit
     }
-    expanded[i] = 0;    // make sure to set zero to indicate end
-    expanded[31] = i;   // indicate how many were empty
+    return i / 2;
 }
 
 double Search::evaluate(Bitboard b) {
@@ -170,24 +182,20 @@ double Search::_value_expected_node(Bitboard board, int depth, double prob) {
         tt_clear();
 
     Bitboard expanded[32];
-    expand_inplace(board, expanded);
+    int n_empty = generate_tile_placements(board, expanded);
 
     double expected_value = 0;
-    double prob_sum = (double)expanded[31]/2.0;
-    double prob2 = 0.9/prob_sum;
-    double prob4 = 0.1/prob_sum;
+    double prob2 = 0.9 / n_empty;
+    double prob4 = 0.1 / n_empty;
 
     // Early out: if the most probable child is already below cutoff,
     // all children will be leaves — skip the expansion entirely.
     if (prob * prob2 < PROBABILITY_CUTOFF)
         return evaluate(board);
 
-    Bitboard *curr = expanded;
-    while (*curr) {
-        Bitboard b2 = *(curr++);
-        Bitboard b4 = *(curr++);
-        expected_value += prob2*_value_max_node(b2, depth+1, prob*prob2) +
-                          prob4*_value_max_node(b4, depth+1, prob*prob4);
+    for (int i = 0; i < n_empty * 2; i += 2) {
+        expected_value += prob2 * _value_max_node(expanded[i],   depth + 1, prob * prob2) +
+                          prob4 * _value_max_node(expanded[i+1], depth + 1, prob * prob4);
     }
 
     // Flush thread-local counter when a top-level async task finishes
