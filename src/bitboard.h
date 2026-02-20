@@ -64,7 +64,7 @@ int empty_squares(Bitboard b);
 int max_value(Bitboard b);
 int board_score(Bitboard b);
 
-std::vector<PossibleMove> possible_moves(Bitboard b);
+PossibleMoves possible_moves(Bitboard b);
 Bitboard row_to_col(Bitboard b, Col c);
 
 inline int bits_to_value(Bitboard s) {

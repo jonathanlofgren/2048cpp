@@ -338,15 +338,14 @@ Bitboard make_move(Bitboard b, Move m) {
 
 
 
-std::vector<PossibleMove> possible_moves(Bitboard b) {
-    std::vector<PossibleMove> moves;
-    moves.reserve(4);
+PossibleMoves possible_moves(Bitboard b) {
+    PossibleMoves moves;
 
     for (Move m = LEFT; m <= RIGHT; ++m) {
         Bitboard bm = make_move(b, m);
 
         if (b != bm)
-            moves.push_back({m, bm});
+            moves.push(m, bm);
     }
 
     return moves;
