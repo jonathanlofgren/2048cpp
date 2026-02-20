@@ -20,6 +20,7 @@ endif()
 add_library(2048core STATIC
     src/bitboard.cpp
     src/search.cpp
+    src/tt.cpp
 )
 target_include_directories(2048core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 

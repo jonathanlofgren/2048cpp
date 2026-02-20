@@ -11,6 +11,7 @@
 #include "types.h"
 #include "bitboard.h"
 #include "search.h"
+#include "tt.h"
 
 struct GameResult {
     int moves;
@@ -151,6 +152,8 @@ int main(int argc, char *argv[]) {
             has_seed = true;
         } else if (std::strcmp(argv[i], "--games") == 0 && i + 1 < argc) {
             num_games = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--no-tt") == 0) {
+            TT::set_enabled(false);
         }
     }
 
