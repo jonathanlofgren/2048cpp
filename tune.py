@@ -11,7 +11,7 @@ Usage:
     python3 tune.py --resume log.json        # resume from saved state
     python3 tune.py --binary ./build/2048cpp # custom binary path
 
-Requires numpy. Install with: pip install numpy
+Requires: pip install numpy cma
 """
 
 import argparse
@@ -19,8 +19,8 @@ import json
 import os
 import subprocess
 import sys
-import time
 
+import cma
 import numpy as np
 
 
@@ -72,98 +72,6 @@ def run_games(binary, weights, num_games, seed, threads):
     return float(np.mean(scores)), float(np.median(scores)), scores
 
 
-class CMAES:
-    """Minimal CMA-ES implementation for weight tuning.
-
-    Operates in log-space since weights span different orders of magnitude
-    (5 to 700), except for mono_power which stays in linear space.
-    """
-
-    def __init__(self, x0, sigma0=0.5, pop_size=None):
-        self.n = len(x0)
-        self.mean = np.array(x0, dtype=float)
-        self.sigma = sigma0
-
-        # Population size: default heuristic
-        self.lam = pop_size or (4 + int(3 * np.log(self.n)))
-        self.mu = self.lam // 2
-
-        # Recombination weights
-        weights = np.log(self.mu + 0.5) - np.log(np.arange(1, self.mu + 1))
-        self.weights = weights / weights.sum()
-        mu_eff = 1.0 / (self.weights ** 2).sum()
-
-        # Adaptation parameters
-        self.c_sigma = (mu_eff + 2) / (self.n + mu_eff + 5)
-        self.d_sigma = 1 + 2 * max(0, np.sqrt((mu_eff - 1) / (self.n + 1)) - 1) + self.c_sigma
-        self.c_c = (4 + mu_eff / self.n) / (self.n + 4 + 2 * mu_eff / self.n)
-        self.c_1 = 2 / ((self.n + 1.3) ** 2 + mu_eff)
-        self.c_mu = min(1 - self.c_1, 2 * (mu_eff - 2 + 1 / mu_eff) / ((self.n + 2) ** 2 + mu_eff))
-
-        self.p_sigma = np.zeros(self.n)
-        self.p_c = np.zeros(self.n)
-        self.C = np.eye(self.n)
-        self.chi_n = np.sqrt(self.n) * (1 - 1 / (4 * self.n) + 1 / (21 * self.n ** 2))
-        self.mu_eff = mu_eff
-
-        self.gen = 0
-
-    def ask(self):
-        """Sample a new population."""
-        eigvals, eigvecs = np.linalg.eigh(self.C)
-        eigvals = np.maximum(eigvals, 1e-20)
-        D = np.sqrt(eigvals)
-        B = eigvecs
-
-        samples = []
-        for _ in range(self.lam):
-            z = np.random.randn(self.n)
-            x = self.mean + self.sigma * (B @ (D * z))
-            samples.append(x)
-
-        return samples
-
-    def tell(self, solutions, fitnesses):
-        """Update distribution from evaluated solutions. Maximizes fitness."""
-        # Sort by fitness (descending — we maximize)
-        order = np.argsort(fitnesses)[::-1]
-        solutions = [solutions[i] for i in order]
-
-        # Recombine: weighted mean of top-mu solutions
-        old_mean = self.mean.copy()
-        self.mean = sum(w * s for w, s in zip(self.weights, solutions[:self.mu]))
-
-        # Update evolution paths
-        eigvals, eigvecs = np.linalg.eigh(self.C)
-        eigvals = np.maximum(eigvals, 1e-20)
-        invsqrtC = eigvecs @ np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T
-
-        self.p_sigma = (1 - self.c_sigma) * self.p_sigma + \
-            np.sqrt(self.c_sigma * (2 - self.c_sigma) * self.mu_eff) * \
-            invsqrtC @ (self.mean - old_mean) / self.sigma
-
-        h_sigma = int(np.linalg.norm(self.p_sigma) /
-                       np.sqrt(1 - (1 - self.c_sigma) ** (2 * (self.gen + 1))) < \
-                       (1.4 + 2 / (self.n + 1)) * self.chi_n)
-
-        self.p_c = (1 - self.c_c) * self.p_c + \
-            h_sigma * np.sqrt(self.c_c * (2 - self.c_c) * self.mu_eff) * \
-            (self.mean - old_mean) / self.sigma
-
-        # Update covariance matrix
-        artmp = np.array([(s - old_mean) / self.sigma for s in solutions[:self.mu]])
-        self.C = (1 - self.c_1 - self.c_mu) * self.C + \
-            self.c_1 * (np.outer(self.p_c, self.p_c) +
-                        (1 - h_sigma) * self.c_c * (2 - self.c_c) * self.C) + \
-            self.c_mu * sum(w * np.outer(a, a) for w, a in zip(self.weights, artmp))
-
-        # Update step size
-        self.sigma *= np.exp((self.c_sigma / self.d_sigma) *
-                             (np.linalg.norm(self.p_sigma) / self.chi_n - 1))
-
-        self.gen += 1
-
-
 def weights_to_internal(w):
     """Convert raw weights to internal CMA-ES space (log-space, except mono_power)."""
     return np.array([
@@ -186,15 +94,15 @@ def internal_to_weights(x):
     ])
 
 
-def save_log(path, history, best_weights, best_score, cma_state):
+def save_log(path, history, best_weights, best_score, es):
     """Save tuning progress to JSON."""
     data = {
         "best_weights": dict(zip(WEIGHT_NAMES, best_weights.tolist())),
         "best_score": best_score,
         "history": history,
-        "cma_mean": cma_state.mean.tolist(),
-        "cma_sigma": cma_state.sigma,
-        "cma_gen": cma_state.gen,
+        "cma_mean": list(es.mean),
+        "cma_sigma": es.sigma,
+        "cma_gen": es.countiter,
     }
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
@@ -230,6 +138,7 @@ def main():
         x0 = np.array(saved["cma_mean"])
         print(f"Resumed from {args.resume}, generation {saved['cma_gen']}, "
               f"best score {saved['best_score']:.0f}")
+
     else:
         # Evaluate baseline
         baseline_w = list(DEFAULT_WEIGHTS.values())
@@ -238,27 +147,43 @@ def main():
         print(f"Baseline score:   mean={mean_s:.0f}  median={med_s:.0f}")
         print()
 
-    pop_size = args.pop if args.pop > 0 else None
-    cma = CMAES(x0, sigma0=args.sigma, pop_size=pop_size)
+    # Configure pycma options
+    opts = {
+        "verbose": -9,         # suppress pycma's own output
+        "verb_disp": 0,
+        "verb_log": 0,
+        "verb_filenameprefix": "",
+        "maxiter": args.gens,
+        # Boundary handling: mono_power (index 2) should stay in [0.5, 8]
+        # Other dimensions are in log-space, loosely bounded
+        "bounds": [[-5, -5, 0.5, -5, -5],
+                   [10, 10, 8.0, 10, 10]],
+    }
+    if args.pop > 0:
+        opts["popsize"] = args.pop
+
+    es = cma.CMAEvolutionStrategy(x0.tolist(), args.sigma, opts)
 
     best_score = -1e9
     best_weights = internal_to_weights(x0)
     history = []
 
-    print(f"CMA-ES: pop={cma.lam}, mu={cma.mu}, dimensions={cma.n}")
+    pop_size = es.popsize
+    print(f"CMA-ES (pycma): pop={pop_size}, dimensions={len(x0)}")
     print(f"Games per evaluation: {args.games}, base seed: {args.seed}")
     print(f"{'Gen':>4}  {'Best':>8}  {'Mean':>8}  {'Sigma':>7}  Weights")
     print("-" * 90)
 
-    for gen in range(args.gens):
+    gen = 0
+    while not es.stop() and gen < args.gens:
         # Use different seeds each generation to avoid overfitting
         gen_seed = args.seed + gen * args.games
 
-        candidates = cma.ask()
+        candidates = es.ask()
         fitnesses = []
 
-        for i, x in enumerate(candidates):
-            w = internal_to_weights(x)
+        for x in candidates:
+            w = internal_to_weights(np.array(x))
             mean_s, med_s, scores = run_games(
                 args.binary, w.tolist(), args.games, gen_seed, args.threads
             )
@@ -268,26 +193,32 @@ def main():
                 best_score = mean_s
                 best_weights = w.copy()
 
-        cma.tell(candidates, fitnesses)
+        # pycma minimizes, so negate scores
+        es.tell(candidates, [-f for f in fitnesses])
 
         gen_best = max(fitnesses)
         gen_mean = np.mean(fitnesses)
-        w_display = internal_to_weights(cma.mean)
+        w_display = internal_to_weights(np.array(es.mean))
 
         entry = {
             "gen": gen,
             "best": gen_best,
             "mean": gen_mean,
-            "sigma": cma.sigma,
+            "sigma": es.sigma,
             "weights": dict(zip(WEIGHT_NAMES, w_display.tolist())),
         }
         history.append(entry)
 
         w_str = "  ".join(f"{n}={v:.1f}" for n, v in zip(WEIGHT_NAMES, w_display))
-        print(f"{gen:4d}  {gen_best:8.0f}  {gen_mean:8.0f}  {cma.sigma:7.4f}  {w_str}")
+        print(f"{gen:4d}  {gen_best:8.0f}  {gen_mean:8.0f}  {es.sigma:7.4f}  {w_str}")
 
         # Save progress each generation
-        save_log(args.log, history, best_weights, best_score, cma)
+        save_log(args.log, history, best_weights, best_score, es)
+        gen += 1
+
+    if es.stop():
+        reasons = es.stop()
+        print(f"\nCMA-ES stopped early: {reasons}")
 
     print()
     print("=" * 60)
