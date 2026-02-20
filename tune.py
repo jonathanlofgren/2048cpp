@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["cma>=4.0", "numpy>=1.24"]
+# ///
 """
 CMA-ES tuner for 2048 AI evaluation weights.
 
@@ -6,12 +10,10 @@ Optimizes the 5 evaluation weights (grad, mono, mono_power, empty, merge)
 by running batches of games and maximizing average score.
 
 Usage:
-    python3 tune.py                          # defaults: 20 games/eval, 50 generations
-    python3 tune.py --games 50 --gens 100    # more thorough
-    python3 tune.py --resume log.json        # resume from saved state
-    python3 tune.py --binary ./build/2048cpp # custom binary path
-
-Requires: pip install numpy cma
+    uv run tune.py                          # defaults: 20 games/eval, 50 generations
+    uv run tune.py --games 50 --gens 100    # more thorough
+    uv run tune.py --resume log.json        # resume from saved state
+    uv run tune.py --binary ./build/2048cpp # custom binary path
 """
 
 import argparse

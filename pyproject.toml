@@ -1,0 +1,9 @@
+[project]
+name = "2048cpp-tools"
+version = "0.1.0"
+description = "Tuning tools for 2048cpp AI"
+requires-python = ">=3.10"
+dependencies = [
+    "cma>=4.0",
+    "numpy>=1.24",
+]
