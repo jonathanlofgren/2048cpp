@@ -52,15 +52,15 @@ int current_max_depth;
 std::unique_ptr<ThreadPool> pool;
 
 float evaluate_board(Bitboard board) {
-    float score = 0;
     Bitboard t = transpose(board);
-
-    for (Row r = ROW_1; r <= ROW_4; ++r) {
-        score += RowEval[UNIQUE_ROWS * r + get_bits(board, r)];
-        score += ColEval[get_bits(t, r)];
-    }
-
-    return score;
+    return RowEval[                   (board        & 0xFFFF)]
+         + RowEval[    UNIQUE_ROWS + ((board >> 16) & 0xFFFF)]
+         + RowEval[2 * UNIQUE_ROWS + ((board >> 32) & 0xFFFF)]
+         + RowEval[3 * UNIQUE_ROWS +  (board >> 48)          ]
+         + ColEval[ t        & 0xFFFF]
+         + ColEval[(t >> 16) & 0xFFFF]
+         + ColEval[(t >> 32) & 0xFFFF]
+         + ColEval[ t >> 48          ];
 }
 
 int count_distinct_tiles(Bitboard board) {
