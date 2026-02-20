@@ -122,12 +122,12 @@ void Search::init() {
 
 double evaluate_board(Bitboard board) {
     double score = 0;
+    Bitboard t = transpose(board);
 
-    for (Row r = ROW_1; r <= ROW_4; ++r)
+    for (Row r = ROW_1; r <= ROW_4; ++r) {
         score += RowEval[UNIQUE_ROWS * r + get_bits(board, r)];
-
-    for (Col c = COL_1; c <= COL_4; ++c)
-        score += ColEval[get_bits(board, c)];
+        score += ColEval[get_bits(t, r)];
+    }
 
     return score;
 }
