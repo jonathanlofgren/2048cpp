@@ -25,6 +25,7 @@ endif()
 # Core library (shared between game and tests)
 add_library(2048core STATIC
     src/bitboard.cpp
+    src/eval.cpp
     src/search.cpp
     src/tt.cpp
 )
