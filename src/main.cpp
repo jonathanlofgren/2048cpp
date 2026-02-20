@@ -46,15 +46,29 @@ GameResult play_game(bool verbose) {
         min_time = std::min(min_time, elapsed_ms);
         max_time = std::max(max_time, elapsed_ms);
 
-        // Make move and place a new square
+        // Make move — check for 65536 merge before placing random tile.
+        // Two rank-15 tiles (32768) merging overflows 4-bit representation,
+        // so detect it by counting rank-15 tiles before and after the move.
+        Bitboard prev = board;
         board = make_move(board, result.move);
-        board = place_random(board);
 
         if (verbose) {
             std::cout << "Move " << moves  << ": " << Bitboards::pretty(result.move) << std::endl;
             std::cout << "Value: " << result.value << std::endl;
-            std::cout << Bitboards::pretty(board) << std::endl;
         }
+
+        if (max_value(prev) == 32768 && max_value(board) < max_value(prev)) {
+            // 32768 + 32768 merge detected (overflowed to 0)
+            uint64_t nodes = Search::get_nodes();
+            if (verbose)
+                std::cout << "65536 tile reached!" << std::endl;
+            return {moves, 65536, board_score(prev), total_time, nodes};
+        }
+
+        board = place_random(board);
+
+        if (verbose)
+            std::cout << Bitboards::pretty(board) << std::endl;
 
         possible = possible_moves(board);
     }
