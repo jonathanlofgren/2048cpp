@@ -143,6 +143,7 @@ int main(int argc, char *argv[]) {
     int num_games = 1;
     unsigned base_seed = 0;
     bool has_seed = false;
+    int num_threads = 0;
 
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
@@ -154,11 +155,14 @@ int main(int argc, char *argv[]) {
             num_games = std::stoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--no-tt") == 0) {
             TT::set_enabled(false);
+        } else if (std::strcmp(argv[i], "--threads") == 0 && i + 1 < argc) {
+            num_threads = std::stoi(argv[++i]);
         }
     }
 
     Bitboards::init();
     Search::init();
+    Search::init_pool(num_threads);
 
     if (num_games == 1) {
         if (has_seed) Bitboards::seed(base_seed);

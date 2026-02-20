@@ -6,6 +6,8 @@
 namespace Search {
 
     void init();
+    void init_pool(int num_threads = 0);  // 0 = hardware_concurrency
+    void shutdown_pool();
 
     struct Result {
         Move move;
