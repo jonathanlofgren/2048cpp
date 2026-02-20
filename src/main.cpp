@@ -13,6 +13,35 @@
 #include "search.h"
 #include "tt.h"
 
+struct Options {
+    bool verbose = false;
+    int num_games = 1;
+    int seed = -1;
+    int num_threads = 0;
+    int tt_bits = 21;
+    bool tt_enabled = true;
+};
+
+Options parse_args(int argc, char *argv[]) {
+    Options opts;
+    for (int i = 1; i < argc; i++) {
+        if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
+            opts.verbose = true;
+        } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+            opts.seed = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--games") == 0 && i + 1 < argc) {
+            opts.num_games = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--no-tt") == 0) {
+            opts.tt_enabled = false;
+        } else if (std::strcmp(argv[i], "--threads") == 0 && i + 1 < argc) {
+            opts.num_threads = std::stoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--tt-bits") == 0 && i + 1 < argc) {
+            opts.tt_bits = std::stoi(argv[++i]);
+        }
+    }
+    return opts;
+}
+
 struct GameResult {
     int moves;
     int max_tile;
@@ -153,54 +182,33 @@ void print_batch_summary(const std::vector<GameResult> &results) {
 
 
 int main(int argc, char *argv[]) {
-    bool verbose = false;
-    int num_games = 1;
-    unsigned base_seed = 0;
-    bool has_seed = false;
-    int num_threads = 0;
-    int tt_bits = 21;
-
-    for (int i = 1; i < argc; i++) {
-        if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
-            verbose = true;
-        } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-            base_seed = static_cast<unsigned>(std::stoul(argv[++i]));
-            has_seed = true;
-        } else if (std::strcmp(argv[i], "--games") == 0 && i + 1 < argc) {
-            num_games = std::stoi(argv[++i]);
-        } else if (std::strcmp(argv[i], "--no-tt") == 0) {
-            TT::set_enabled(false);
-        } else if (std::strcmp(argv[i], "--threads") == 0 && i + 1 < argc) {
-            num_threads = std::stoi(argv[++i]);
-        } else if (std::strcmp(argv[i], "--tt-bits") == 0 && i + 1 < argc) {
-            tt_bits = std::stoi(argv[++i]);
-        }
-    }
+    Options opts = parse_args(argc, argv);
 
     Bitboards::init();
     Search::init();
-    TT::init(tt_bits);
-    Search::init_pool(num_threads);
+    if (!opts.tt_enabled) TT::set_enabled(false);
+    TT::init(opts.tt_bits);
+    Search::init_pool(opts.num_threads);
 
-    if (num_games == 1) {
-        if (has_seed) Bitboards::seed(base_seed);
-        GameResult r = play_game(verbose);
+    if (opts.num_games == 1) {
+        if (opts.seed >= 0) Bitboards::seed(static_cast<unsigned>(opts.seed));
+        GameResult r = play_game(opts.verbose);
         print_single_result(r);
     } else {
-        if (!has_seed) {
-            base_seed = static_cast<unsigned>(
+        unsigned base_seed = opts.seed >= 0
+            ? static_cast<unsigned>(opts.seed)
+            : static_cast<unsigned>(
                 std::chrono::system_clock::now().time_since_epoch().count());
-        }
 
-        std::cout << "=== Benchmark: " << num_games << " games, base seed "
+        std::cout << "=== Benchmark: " << opts.num_games << " games, base seed "
                   << base_seed << " ===" << std::endl << std::endl;
 
         std::cout << "seed\tmoves\tmax_tile\tscore\ttime_s\tnodes" << std::endl;
 
         std::vector<GameResult> results;
-        results.reserve(num_games);
+        results.reserve(opts.num_games);
 
-        for (int i = 0; i < num_games; i++) {
+        for (int i = 0; i < opts.num_games; i++) {
             unsigned seed = base_seed + i;
             Bitboards::seed(seed);
             GameResult r = play_game(false);
