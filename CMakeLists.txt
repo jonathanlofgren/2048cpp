@@ -16,6 +16,12 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# Performance flags (Release only)
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT MSVC)
+    add_compile_options(-march=native -flto -ffast-math)
+    add_link_options(-flto)
+endif()
+
 # Core library (shared between game and tests)
 add_library(2048core STATIC
     src/bitboard.cpp

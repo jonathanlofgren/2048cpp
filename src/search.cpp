@@ -114,9 +114,14 @@ float value_expected_node(Bitboard board, int depth, double prob) {
     if (prob * prob2 < PROBABILITY_CUTOFF)
         return Search::evaluate(board);
 
+    bool search4 = prob * prob4 >= PROBABILITY_CUTOFF;
+
     for (int i = 0; i < n_empty * 2; i += 2) {
-        expected_value += (float)(prob2 * value_max_node(expanded[i],   depth + 1, prob * prob2) +
-                                  prob4 * value_max_node(expanded[i+1], depth + 1, prob * prob4));
+        expected_value += (float)(prob2 * value_max_node(expanded[i], depth + 1, prob * prob2));
+        if (search4)
+            expected_value += (float)(prob4 * value_max_node(expanded[i+1], depth + 1, prob * prob4));
+        else
+            expected_value += (float)(prob4 * Search::evaluate(expanded[i+1]));
     }
 
     return expected_value;
@@ -275,6 +280,8 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
             continue;
         }
 
+        bool search4 = prob4 >= PROBABILITY_CUTOFF;
+
         for (int i = 0; i < n_empty * 2; i += 2) {
             Bitboard child2 = expanded[i];
             Bitboard child4 = expanded[i + 1];
@@ -287,12 +294,17 @@ Search::Result Search::expectimax_parallel(Bitboard board) {
                 return {val, idx, prob2};
             }));
 
-            // Submit 4-tile child
-            futures.push_back(pool->submit([child4, prob4, idx]() -> TaskResult {
-                float val = value_max_node(child4, 1, prob4);
-                flush_tl_nodes();
-                return {val, idx, prob4};
-            }));
+            // 4-tile child: only submit to pool if above cutoff,
+            // otherwise evaluate as leaf on the main thread.
+            if (search4) {
+                futures.push_back(pool->submit([child4, prob4, idx]() -> TaskResult {
+                    float val = value_max_node(child4, 1, prob4);
+                    flush_tl_nodes();
+                    return {val, idx, prob4};
+                }));
+            } else {
+                move_values[idx] += prob4 * evaluate(child4);
+            }
         }
     }
 
