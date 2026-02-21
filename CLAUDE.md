@@ -24,6 +24,14 @@ ctest --test-dir build --output-on-failure
 ./build/2048cpp --threads 8            # use 8 worker threads (default: hardware_concurrency)
 ```
 
+## Tune
+
+```bash
+uv run tune.py                          # 20 games/eval, 50 generations
+uv run tune.py --games 50 --gens 100    # more thorough
+uv run tune.py --resume tune_log.json   # resume from saved state
+```
+
 ## Benchmark
 
 ```bash

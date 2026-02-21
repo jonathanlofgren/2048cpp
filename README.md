@@ -56,11 +56,24 @@ ctest --test-dir build --output-on-failure
 ./build/2048tests smoothness
 ```
 
+## Tuning Weights
+
+The evaluation function weights can be tuned using CMA-ES via `tune.py`. Requires [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv run tune.py                          # 20 games/eval, 50 generations
+uv run tune.py --games 50 --gens 100    # more thorough
+uv run tune.py --resume tune_log.json   # resume from saved state
+```
+
+The tuner optimizes 5 weights (grad, mono, mono\_power, empty, merge) that control the board evaluation heuristic. It operates in log-space for weights that span different orders of magnitude and saves progress to `tune_log.json` after each generation.
+
 ## Project Structure
 
 ```
 ├── CMakeLists.txt              # Build configuration
 ├── .github/workflows/ci.yml   # CI pipeline
+├── tune.py                    # CMA-ES weight tuner (run with uv)
 ├── src/
 │   ├── types.h                 # Core types (Bitboard, Move, Square enums)
 │   ├── bitboard.h / bitboard.cpp   # Board representation and move operations
